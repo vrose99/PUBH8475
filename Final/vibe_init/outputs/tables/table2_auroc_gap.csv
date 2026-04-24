@@ -1,0 +1,16 @@
+model,mitigation,D0,D1A,D1B,D2A,D2B,D3A,D3B
+gradient_boosting,fairness_penalty,0.0113,-0.0021,0.0782,0.0063,0.013,0.0195,0.0265
+gradient_boosting,none,-0.0304,-0.0052,-0.0185,-0.0296,-0.029,-0.0312,-0.0288
+gradient_boosting,reweighting,-0.0205,-0.0123,-0.0138,-0.0216,-0.0203,-0.0211,-0.0201
+gradient_boosting,robust_model,-0.0435,-0.0275,0.0013,-0.0423,-0.0327,-0.0457,-0.0337
+gradient_boosting,smote,-0.0302,-0.0108,-0.021,-0.0288,-0.0292,-0.0306,-0.0296
+logistic_regression,fairness_penalty,0.0113,-0.0021,0.0782,0.0063,0.013,0.0195,0.0265
+logistic_regression,none,-0.0412,-0.0252,-0.003,-0.0445,-0.0341,-0.0416,-0.0362
+logistic_regression,reweighting,-0.0383,-0.0501,-0.0248,-0.0422,-0.0313,-0.0383,-0.0333
+logistic_regression,robust_model,-0.0435,-0.0275,0.0013,-0.0423,-0.0327,-0.0457,-0.0337
+logistic_regression,smote,-0.0379,-0.0362,-0.006,-0.0379,-0.0304,-0.0382,-0.0302
+random_forest,fairness_penalty,0.0113,-0.0021,0.0782,0.0063,0.013,0.0195,0.0265
+random_forest,none,-0.0283,0.0084,-0.0189,-0.0289,-0.03,-0.0366,-0.0275
+random_forest,reweighting,-0.0456,-0.0372,0.0174,-0.0427,-0.0282,-0.0427,-0.0339
+random_forest,robust_model,-0.0435,-0.0275,0.0013,-0.0423,-0.0327,-0.0457,-0.0337
+random_forest,smote,-0.0334,-0.0182,-0.0091,-0.0347,-0.0372,-0.0435,-0.0404
