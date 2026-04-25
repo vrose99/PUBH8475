@@ -34,13 +34,12 @@ class PerturbationConfig:
 
 @dataclass
 class ModelConfig:
-    # Keys must match entries in models.MODEL_REGISTRY
+    # Keys must match entries in models.MODEL_REGISTRY.
+    # Liu et al. (2019) model family used as the primary comparison set.
     models: List[str] = field(default_factory=lambda: [
-        "logistic_regression",
-        "random_forest",
-        "gradient_boosting",
-        # "xgboost",   # requires `brew install libomp` on macOS
-        # "lightgbm",
+        "liu_glm",
+        "liu_xgboost",   # requires `brew install libomp` on macOS if xgboost fails
+        "liu_rnn",
     ])
     random_state: int = 42
     test_size: float = 0.20
@@ -120,8 +119,8 @@ class SweepConfig:
 @dataclass
 class Config:
     # --- Paths ---
-    # Download PhysioNet 2019 challenge data and set this to the folder containing
-    # the PSV files (e.g. training_setA/ and/or training_setB/).
+    # Parent folder containing training_setA/ and training_setB/.
+    # PSV files are discovered recursively so both sets are pooled automatically.
     data_dir: Path = Path("data/physionet_sepsis")
     output_dir: Path = Path("outputs")
 

@@ -201,10 +201,11 @@ def apply_fairness_penalty(X, y, sensitive, model, cfg: Config):
             "fairlearn not installed — `pip install fairlearn`"
         )
 
-    from sklearn.linear_model import LogisticRegression
+    from sklearn.base import clone
 
-    # ExponentiatedGradient needs a fresh estimator that supports sample_weight
-    base = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=cfg.random_state) #TODO: change this to use model
+    # Clone the passed model so ExponentiatedGradient gets a fresh, unfitted estimator.
+    # clone() copies hyperparameters without copying fitted state.
+    base = clone(model)
     mitigator = ExponentiatedGradient(
         estimator=base,
         constraints=EqualizedOdds(),

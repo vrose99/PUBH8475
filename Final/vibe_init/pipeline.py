@@ -11,6 +11,14 @@ Usage:
 Outputs land in outputs/figures/ and outputs/tables/.
 """
 
+# ── Quick-run flag ────────────────────────────────────────────────────────────
+# Set TEST = True to run a fast end-to-end smoke-test (~5–10 minutes).
+# Uses a stratified sample of 2 000 patients, only the liu_glm model, and
+# skips EDA, post-hoc analysis, parameter sweep, and the markdown report.
+# Flip to False (or use --no-test) for the full production run.
+TEST = True
+# ─────────────────────────────────────────────────────────────────────────────
+
 # ── macOS fork-safety fix ─────────────────────────────────────────────────────
 # Must happen before any C extension (numpy, sklearn, joblib) is imported.
 # Forking after Objective-C runtime initialisation causes SIGSEGV in worker
@@ -63,11 +71,27 @@ def parse_args():
                    help="Override model list, e.g. --models logistic_regression xgboost")
     p.add_argument("--mitigations",   nargs="+", default=None)
     p.add_argument("--seed",          type=int,  default=42)
+    p.add_argument("--no-test",       action="store_true",
+                   help="Override the TEST flag and run the full production pipeline")
     return p.parse_args()
+
+
+_TEST_MAX_PATIENTS  = 2_000   # patients to load in test mode
+_TEST_MODELS        = ["liu_glm"]  # fastest Liu model only
+_TEST_MITIGATIONS   = ["none", "reweighting"]  # skip slow fairness_penalty/smote
 
 
 def main():
     args = parse_args()
+
+    # ── Resolve TEST mode ─────────────────────────────────────────────────────
+    run_test = TEST and not args.no_test
+    if run_test:
+        logger.info(
+            "TEST MODE — %d patients, models=%s, mitigations=%s. "
+            "Set TEST=False in pipeline.py or pass --no-test for a full run.",
+            _TEST_MAX_PATIENTS, _TEST_MODELS, _TEST_MITIGATIONS,
+        )
 
     # ── Config ────────────────────────────────────────────────────────────────
     from config import Config
@@ -79,12 +103,21 @@ def main():
         cfg.data_dir = args.data_dir
     if args.models:
         cfg.model.models = args.models
+    elif run_test:
+        cfg.model.models = _TEST_MODELS
     if args.mitigations:
         cfg.mitigation.strategies = args.mitigations
+    elif run_test:
+        cfg.mitigation.strategies = _TEST_MITIGATIONS
     if args.sweep:
         cfg.sweep.run_sweep = True
     if args.bootstrap:
         cfg.bootstrap.enabled = True
+    # In test mode disable slow optional steps unless explicitly requested.
+    if run_test:
+        cfg.run_eda      = False
+        cfg.run_analysis = False
+        cfg.run_report   = False
     if args.no_eda:
         cfg.run_eda = False
     if args.no_analysis:
@@ -101,8 +134,9 @@ def main():
     from data_loader import load_dataset
 
     logger.info("=== Step 1/5 — Loading data ===")
+    max_patients = args.max_patients or (_TEST_MAX_PATIENTS if run_test else None)
     try:
-        df = load_dataset(cfg, max_patients=args.max_patients, cache=not args.no_cache)
+        df = load_dataset(cfg, max_patients=max_patients, cache=not args.no_cache)
     except FileNotFoundError as exc:
         logger.error(str(exc))
         sys.exit(1)

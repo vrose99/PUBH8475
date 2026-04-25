@@ -4,11 +4,21 @@ Model registry.
 Add new models by inserting an entry into MODEL_REGISTRY.
 Each value is a callable (no args) that returns a fresh sklearn-compatible
 estimator.  The estimator must implement fit / predict / predict_proba.
+
+Liu et al. (2019, Sci Rep) models are prefixed "liu_":
+  liu_glm      — L1 logistic regression, C tuned by 10-fold CV (AUROC)
+  liu_xgboost  — XGBoost with class-imbalance correction via scale_pos_weight
+  liu_rnn      — MLP approximating the RNN family on aggregated static features
+                 (the static pipeline has no raw time-steps; for true sequence
+                  modelling see Final/models/gru_model.py)
 """
 
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
+from sklearn.neural_network import MLPClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 
 try:
@@ -90,6 +100,85 @@ def _svm_calibrated():
     )
 
 
+# ── Liu et al. (2019) model family ───────────────────────────────────────────
+
+def _liu_glm():
+    """
+    L1-regularized logistic regression with 10-fold CV C selection.
+
+    Liu et al. report LASSO-based feature selection inside a GLM, tuned by
+    10-fold cross-validation optimising AUROC, with balanced class weights to
+    handle the ~8% sepsis prevalence in PhysioNet 2019.
+    """
+    return LogisticRegressionCV(
+        Cs=10,
+        cv=10,
+        penalty="l1",
+        solver="liblinear",
+        scoring="roc_auc",
+        class_weight="balanced",
+        max_iter=4000,
+        random_state=42,
+    )
+
+
+def _liu_xgboost():
+    """
+    XGBoost configured for imbalanced EHR classification.
+
+    scale_pos_weight is set to the expected class ratio for PhysioNet 2019
+    (~11:1 negative:positive).  Liu et al. use max_depth=4 with shrinkage
+    learning_rate=0.05 and row/column subsampling to reduce overfitting on
+    the sparse lab-value features.
+    """
+    if not _XGB_AVAILABLE:
+        raise RuntimeError(
+            "xgboost not available — on macOS run `brew install libomp` then reinstall xgboost"
+        )
+    return XGBClassifier(
+        n_estimators=300,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        objective="binary:logistic",
+        eval_metric="auc",
+        scale_pos_weight=11,   # approx neg/pos ratio in PhysioNet 2019
+        random_state=42,
+        n_jobs=1,
+    )
+
+
+def _liu_rnn():
+    """
+    MLP approximating the RNN model family on aggregated static features.
+
+    Liu et al. use a recurrent network on hourly time-series.  The vibe_init
+    pipeline aggregates patient records into one row before model fitting, so
+    raw sequences are unavailable.  An MLP with two hidden layers and dropout
+    regularisation is the closest sklearn-native analogue; it learns non-linear
+    interactions among the aggregated vital/lab statistics in the same way an
+    RNN would over the sequence.  For true sequence modelling see
+    Final/models/gru_model.py used by Final/run_experiment.py.
+    """
+    return Pipeline([
+        ("scaler", StandardScaler()),
+        ("mlp", MLPClassifier(
+            hidden_layer_sizes=(128, 64),
+            activation="relu",
+            solver="adam",
+            alpha=1e-3,          # L2 regularisation (dropout analogue)
+            batch_size=256,
+            learning_rate_init=1e-3,
+            max_iter=200,
+            early_stopping=True,
+            validation_fraction=0.15,
+            n_iter_no_change=10,
+            random_state=42,
+        )),
+    ])
+
+
 MODEL_REGISTRY: dict[str, callable] = {
     "logistic_regression": _logistic_regression,
     "random_forest":       _random_forest,
@@ -97,6 +186,10 @@ MODEL_REGISTRY: dict[str, callable] = {
     "xgboost":             _xgboost,
     "lightgbm":            _lightgbm,
     "svm":                 _svm_calibrated,
+    # Liu et al. (2019) model family
+    "liu_glm":             _liu_glm,
+    "liu_xgboost":         _liu_xgboost,
+    "liu_rnn":             _liu_rnn,
 }
 
 
