@@ -75,6 +75,70 @@ from fairness import (
 )
 
 
+# ── PhysioNet 2019 Challenge Utility Function ────────────────────────────────
+
+def physionet_2019_utility(
+    hours_until_sepsis: np.ndarray,
+    y_pred_binary: np.ndarray,
+    normalize: bool = True,
+) -> np.ndarray:
+    """
+    Exact utility function from the PhysioNet 2019 Sepsis Challenge.
+
+    For each (patient, hour) row computes U(s,t):
+      - Sepsis patient (hours_until_sepsis is finite):
+        - Positive prediction: U_TP(t) = 1 - (t_sep - t) / (24*6)  if t < t_sep
+                              U_TP(t) = -2  if t >= t_sep (too late)
+        - Negative prediction: U_FN = -2
+      - Non-sepsis patient (hours_until_sepsis is NaN):
+        - Positive prediction: U_FP = -0.05
+        - Negative prediction: U_TN = 0
+
+    The challenge defines t_sep as the time of sepsis onset (as recorded in
+    SepsisLabel). In this pipeline, hours_until_sepsis = (t_sep - t) for rows
+    before onset, NaN for rows after or for non-septic patients.
+
+    Parameters
+    ----------
+    hours_until_sepsis : array shape (n,); finite for pre-onset rows, NaN else
+    y_pred_binary      : binary predictions (n,); 0 or 1
+    normalize          : if True, divide by n to get average utility per row.
+                        If False, return sum of utilities.
+
+    Returns
+    -------
+    np.ndarray of shape (n,) with per-row utility scores, or scalar average/sum.
+    """
+    hours_until_sepsis = np.asarray(hours_until_sepsis, dtype=float)
+    y_pred_binary = np.asarray(y_pred_binary, dtype=int)
+
+    is_septic = np.isfinite(hours_until_sepsis)
+    is_nonseptic = ~is_septic
+
+    utility = np.zeros(len(hours_until_sepsis), dtype=float)
+
+    # Sepsis patients: positive predictions
+    # U_TP = 1 - (t_sep - t) / (24*6) = 1 - hours_until_sepsis / 144
+    septic_pos = is_septic & (y_pred_binary == 1)
+    utility[septic_pos] = 1.0 - (hours_until_sepsis[septic_pos] / 144.0)
+
+    # Sepsis patients: negative predictions → missed sepsis
+    septic_neg = is_septic & (y_pred_binary == 0)
+    utility[septic_neg] = -2.0
+
+    # Non-sepsis patients: false alarms
+    nonseptic_pos = is_nonseptic & (y_pred_binary == 1)
+    utility[nonseptic_pos] = -0.05
+
+    # Non-sepsis patients: correct negatives
+    nonseptic_neg = is_nonseptic & (y_pred_binary == 0)
+    utility[nonseptic_neg] = 0.0
+
+    if normalize:
+        return utility.mean()
+    return utility
+
+
 # ── Detection timing helpers ──────────────────────────────────────────────────
 
 def detection_lead_hours(
@@ -226,6 +290,9 @@ def _group_detection_metrics(
     w_tn = getattr(getattr(cfg, "fairness", None), "utility_w_tn",  0.0) if cfg else 0.0
     clin = clinical_utility_score(y_true, y_bin, w_tp=w_tp, w_fp=w_fp, w_fn=w_fn, w_tn=w_tn)
 
+    # PhysioNet 2019 challenge utility (time-dependent reward for early detection)
+    physionet_utility = physionet_2019_utility(hours_until_sepsis, y_bin, normalize=True)
+
     return {
         # Patient counts
         "n":                            len(y_true),
@@ -241,6 +308,8 @@ def _group_detection_metrics(
         "brier":                        float(brier),
         "ece":                          float(ece),
         "clinical_utility":             float(clin),
+        # PhysioNet 2019 challenge utility (rewards early detection)
+        "physionet_utility":            float(physionet_utility),
         # Early-detection specific
         "median_detection_lead_hours":  float(np.median(valid_leads)) if len(valid_leads) > 0 else np.nan,
         "mean_detection_lead_hours":    float(np.mean(valid_leads))   if len(valid_leads) > 0 else np.nan,
@@ -314,7 +383,7 @@ def compute_detection_fairness_report(
 
     # Gap metrics (female − male; positive = females better off)
     for m in ["tpr", "fpr", "auroc", "precision", "f1", "brier", "ece",
-              "clinical_utility", "median_detection_lead_hours",
+              "clinical_utility", "physionet_utility", "median_detection_lead_hours",
               "mean_detection_lead_hours", "pct_detected_before_onset",
               "pct_missed", "alarm_fatigue_rate"]:
         report[f"{m}_gap"] = gap(m)

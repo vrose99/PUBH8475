@@ -17,6 +17,24 @@ Outputs land in outputs/figures/ and outputs/tables/.
 # skips EDA, post-hoc analysis, parameter sweep, and the markdown report.
 # Flip to False (or use --no-test) for the full production run.
 TEST = True
+
+# ── Time-series mode ──────────────────────────────────────────────────────────
+# Set USE_TIMESERIES = True to switch from static (aggregated) patient-level
+# classification to time-series early-detection classification aligned with the
+# PhysioNet 2019 challenge utility function.
+#
+# Static mode (False):
+#   - Aggregates features across entire ICU stay (mean, std, min, max, last)
+#   - One prediction per patient: "did/will this patient develop sepsis?"
+#   - Fairness: per-group TPR, FPR, AUC gaps
+#
+# Time-series mode (True):
+#   - Builds hourly sequences with rolling statistics (6-hour windows)
+#   - One prediction per hour: "will sepsis occur in the next 6 hours?"
+#   - Fairness: per-group early-warning-time gaps, alarm-fatigue gaps
+#   - Aligns with PhysioNet 2019 challenge's early-detection utility function
+#
+USE_TIMESERIES = False
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── macOS fork-safety fix ─────────────────────────────────────────────────────
@@ -131,30 +149,39 @@ def main():
     rng = np.random.default_rng(cfg.random_state)
 
     # ── Load data ─────────────────────────────────────────────────────────────
-    from data_loader import load_dataset
-
     logger.info("=== Step 1/5 — Loading data ===")
     max_patients = args.max_patients or (_TEST_MAX_PATIENTS if run_test else None)
     try:
-        df = load_dataset(cfg, max_patients=max_patients, cache=not args.no_cache)
+        if USE_TIMESERIES:
+            from data_loader_timeseries import load_timeseries_dataset
+            logger.info("TIME-SERIES MODE: hourly early-detection predictions")
+            df = load_timeseries_dataset(cfg, max_patients=max_patients, cache=not args.no_cache)
+        else:
+            from data_loader import load_dataset
+            logger.info("STATIC MODE: patient-level aggregated predictions")
+            df = load_dataset(cfg, max_patients=max_patients, cache=not args.no_cache)
     except FileNotFoundError as exc:
         logger.error(str(exc))
         sys.exit(1)
 
-    # ── Build dataset variants ────────────────────────────────────────────────
-    from perturbations import build_all_datasets
+    # ── Build dataset variants (static mode only) ─────────────────────────────
+    if not USE_TIMESERIES:
+        from perturbations import build_all_datasets
 
-    logger.info("=== Step 2/5 — Building dataset variants ===")
-    datasets = build_all_datasets(df, cfg, rng)
+        logger.info("=== Step 2/5 — Building dataset variants ===")
+        datasets = build_all_datasets(df, cfg, rng)
 
-    # ── EDA ───────────────────────────────────────────────────────────────────
-    if cfg.run_eda:
-        from eda import run_eda
-        logger.info("=== Step 2b — EDA ===")
-        run_eda(df, datasets, cfg)
+        # ── EDA (static mode only) ────────────────────────────────────────────
+        if cfg.run_eda:
+            from eda import run_eda
+            logger.info("=== Step 2b — EDA ===")
+            run_eda(df, datasets, cfg)
+    else:
+        # Time-series mode: no perturbations, just use the raw dataset
+        datasets = {"original": df}
+        logger.info("=== Step 2/5 — Skipped (time-series mode) ===")
 
     # ── Run evaluation ────────────────────────────────────────────────────────
-    from evaluation import run_evaluation, run_parameter_sweep
     from joblib import parallel_backend
 
     logger.info(
@@ -165,7 +192,12 @@ def main():
     # Force sequential joblib backend — prevents all forked worker threads that
     # cause SIGSEGV on macOS (EXC_BAD_ACCESS in loky/OpenMP worker threads).
     with parallel_backend("sequential"):
-        results = run_evaluation(datasets, cfg, rng)
+        if USE_TIMESERIES:
+            from evaluation_timeseries import run_timeseries_evaluation
+            results = run_timeseries_evaluation(df, cfg, rng)
+        else:
+            from evaluation import run_evaluation, run_parameter_sweep
+            results = run_evaluation(datasets, cfg, rng)
 
     # ── Optional: bootstrap CIs ───────────────────────────────────────────────
     if cfg.bootstrap.enabled:
@@ -177,13 +209,16 @@ def main():
     logger.info("Raw results saved to %s", results_path)
 
     sweep_results: pd.DataFrame = pd.DataFrame()
-    if cfg.sweep.run_sweep:
+    if cfg.sweep.run_sweep and not USE_TIMESERIES:
         logger.info("=== Running parameter sweep (appendix) ===")
+        from evaluation import run_parameter_sweep
         with parallel_backend("sequential"):
             sweep_results = run_parameter_sweep(df, cfg, rng)
         sweep_path = cfg.output_dir / "tables" / "results_sweep.csv"
         sweep_results.to_csv(sweep_path, index=False)
         logger.info("Sweep results saved to %s", sweep_path)
+    elif cfg.sweep.run_sweep and USE_TIMESERIES:
+        logger.info("Parameter sweep not implemented for time-series mode — skipping")
 
     # ── Visualise ─────────────────────────────────────────────────────────────
     from visualization import render_all
