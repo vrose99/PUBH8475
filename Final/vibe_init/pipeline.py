@@ -94,10 +94,9 @@ def parse_args():
     return p.parse_args()
 
 
-_TEST_MAX_PATIENTS  = 2_000   # patients to load in test mode
-_TEST_MODELS        = ["liu_glm"]  # fastest Liu model only
-_TEST_MITIGATIONS   = ["none", "reweighting"]  # skip slow fairness_penalty/smote
-
+_TEST_MAX_PATIENTS  = 300   # patients to load in test mode
+_TEST_MODELS        = ["liu_glm", "liu_xgboost","liu_rnn"]
+_TEST_MITIGATIONS   = ["none", "reweighting","smote","fairness_penalty"]  # skip slow fairness_penalty/smote
 
 def main():
     args = parse_args()
