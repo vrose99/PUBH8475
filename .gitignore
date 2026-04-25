@@ -4,3 +4,22 @@ Final/kaggle_data/Dataset.csv
 Final/results_notebook/glm_test_time_scores.csv
 Final/.DS_Store
 .DS_Store
+data/
+*.csv
+*.parquet
+Dataset.csv
+
+# Cache
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Outputs (regenerate from pipeline)
+outputs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+Final/.DS_Store
+Final/.DS_Store
