@@ -204,7 +204,7 @@ def apply_fairness_penalty(X, y, sensitive, model, cfg: Config):
     from sklearn.linear_model import LogisticRegression
 
     # ExponentiatedGradient needs a fresh estimator that supports sample_weight
-    base = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=cfg.random_state)
+    base = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=cfg.random_state) #TODO: change this to use model
     mitigator = ExponentiatedGradient(
         estimator=base,
         constraints=EqualizedOdds(),
