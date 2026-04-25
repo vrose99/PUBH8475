@@ -8,18 +8,28 @@ estimator.  The estimator must implement fit / predict / predict_proba.
 Liu et al. (2019, Sci Rep) models are prefixed "liu_":
   liu_glm      — L1 logistic regression, C tuned by 10-fold CV (AUROC)
   liu_xgboost  — XGBoost with class-imbalance correction via scale_pos_weight
-  liu_rnn      — MLP approximating the RNN family on aggregated static features
-                 (the static pipeline has no raw time-steps; for true sequence
-                  modelling see Final/models/gru_model.py)
+  liu_rnn      — LiuLikeGRU (single-step wrapper) applied to aggregated static
+                 features; same architecture and hyperparameters as the GRU in
+                 Final/models/gru_model.py / Final/run_models.ipynb
 """
 
+import sys
+from pathlib import Path
+
+import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
-from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+try:
+    from models.gru_model import LiuLikeGRU as _LiuLikeGRU
+    _GRU_AVAILABLE = True
+except Exception:
+    _GRU_AVAILABLE = False
 
 try:
     from xgboost import XGBClassifier
@@ -149,34 +159,52 @@ def _liu_xgboost():
     )
 
 
-def _liu_rnn():
+class _GRUStaticWrapper:
     """
-    MLP approximating the RNN model family on aggregated static features.
+    Wraps LiuLikeGRU for use with 2-D static/aggregated data.
 
-    Liu et al. use a recurrent network on hourly time-series.  The vibe_init
-    pipeline aggregates patient records into one row before model fitting, so
-    raw sequences are unavailable.  An MLP with two hidden layers and dropout
-    regularisation is the closest sklearn-native analogue; it learns non-linear
-    interactions among the aggregated vital/lab statistics in the same way an
-    RNN would over the sequence.  For true sequence modelling see
-    Final/models/gru_model.py used by Final/run_experiment.py.
+    The vibe_init pipeline produces one row per patient (or per hour-window)
+    rather than raw hourly sequences, so there is no time dimension.  This
+    wrapper reshapes 2-D input (n_samples, n_features) into the 3-D tensor
+    (n_samples, 1, n_features) that LiuLikeGRU expects, treating each sample
+    as a single-step sequence.  All GRU hyperparameters match the values used
+    in Final/run_models.ipynb / Final/config.py.
     """
-    return Pipeline([
-        ("scaler", StandardScaler()),
-        ("mlp", MLPClassifier(
-            hidden_layer_sizes=(128, 64),
-            activation="relu",
-            solver="adam",
-            alpha=1e-3,          # L2 regularisation (dropout analogue)
-            batch_size=256,
-            learning_rate_init=1e-3,
-            max_iter=200,
-            early_stopping=True,
-            validation_fraction=0.15,
-            n_iter_no_change=10,
+
+    def __init__(self):
+        if not _GRU_AVAILABLE:
+            raise ImportError("torch is required for liu_rnn. Install PyTorch or use liu_glm.")
+        self._gru = _LiuLikeGRU(
             random_state=42,
-        )),
-    ])
+            hidden_size=64,
+            num_layers=1,
+            dropout=0.1,
+            epochs=12,
+            batch_size=128,
+            learning_rate=1e-3,
+        )
+
+    def fit(self, X, y, **kwargs):
+        self._gru.fit(np.asarray(X)[:, np.newaxis, :], np.asarray(y))
+        return self
+
+    def predict_proba(self, X):
+        p = self._gru.predict_proba(np.asarray(X)[:, np.newaxis, :])
+        return np.column_stack([1 - p, p])
+
+    def predict(self, X):
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+    # sklearn compatibility
+    def get_params(self, deep=True):
+        return {}
+
+    def set_params(self, **params):
+        return self
+
+
+def _liu_rnn():
+    return _GRUStaticWrapper()
 
 
 MODEL_REGISTRY: dict[str, callable] = {
