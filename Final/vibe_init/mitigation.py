@@ -296,7 +296,7 @@ def apply_threshold_optimization(X, y, sensitive, model, cfg: Config):
     w_fp = cfg.fairness.utility_w_fp   # -0.05 (false alarm)
 
     # ── Step 1: 80/20 split for threshold calibration ─────────────────────────
-    strat = y.astype(str) + "_" + sensitive.astype(str)
+    strat = np.array([f"{y_i}_{s_i}" for y_i, s_i in zip(y, sensitive)])
     sss = StratifiedShuffleSplit(
         n_splits=1, test_size=0.2, random_state=cfg.random_state
     )

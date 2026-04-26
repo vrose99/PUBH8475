@@ -351,10 +351,24 @@ def render_all(results: pd.DataFrame, cfg: Config):
 
 # ── Critical Tables and Heatmaps ──────────────────────────────────────────────
 
+def _format_metric_with_ci(row: pd.Series, metric: str) -> str:
+    """Format metric value with CI if available."""
+    val = row[metric]
+    ci_lower_col = f"{metric}_ci_lower"
+    ci_upper_col = f"{metric}_ci_upper"
+
+    if ci_lower_col in row and ci_upper_col in row and pd.notna(row[ci_lower_col]):
+        ci_lower = row[ci_lower_col]
+        ci_upper = row[ci_upper_col]
+        return f"{val:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]"
+    return f"{val:.3f}"
+
+
 def table_baseline_comparison(results: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     """
     Table 1: Baseline Model Performance (No Mitigation).
     Shows Model × Dataset with Utility, Disparate Impact, and Equal Opportunity.
+    Includes 95% CIs if bootstrap is enabled.
     """
     import plotly.graph_objects as go
 
@@ -374,6 +388,12 @@ def table_baseline_comparison(results: pd.DataFrame, cfg: Config) -> pd.DataFram
             "overall_physionet_utility",
             "disparate_impact",
             "equal_opportunity",
+            "overall_physionet_utility_ci_lower",
+            "overall_physionet_utility_ci_upper",
+            "disparate_impact_ci_lower",
+            "disparate_impact_ci_upper",
+            "equal_opportunity_ci_lower",
+            "equal_opportunity_ci_upper",
         ]
     ].rename(
         columns={
@@ -385,8 +405,6 @@ def table_baseline_comparison(results: pd.DataFrame, cfg: Config) -> pd.DataFram
         }
     )
 
-    df = df.round(3)
-
     model_order = ["GLM", "RNN", "XGBoost"]
     dataset_order = ["Balanced", "Row Removal", "Missingness"]
 
@@ -394,7 +412,7 @@ def table_baseline_comparison(results: pd.DataFrame, cfg: Config) -> pd.DataFram
     df["Dataset"] = pd.Categorical(df["Dataset"], dataset_order)
     df = df.sort_values(["Model", "Dataset"])
 
-    # Group rows with blank model cells
+    # Group rows with blank model cells, formatting metrics with CIs
     rows = []
     for model in model_order:
         df_m = df[df["Model"] == model]
@@ -403,9 +421,9 @@ def table_baseline_comparison(results: pd.DataFrame, cfg: Config) -> pd.DataFram
                 {
                     "Model": model if i == 0 else "",
                     "Dataset": r["Dataset"],
-                    "Utility": r["Utility"],
-                    "Disparate Impact": r["Disparate Impact"],
-                    "Equal Opportunity": r["Equal Opportunity"],
+                    "Utility": _format_metric_with_ci(r, "Utility"),
+                    "Disparate Impact": _format_metric_with_ci(r, "Disparate Impact"),
+                    "Equal Opportunity": _format_metric_with_ci(r, "Equal Opportunity"),
                 }
             )
 
@@ -447,6 +465,7 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
     """
     Table 2 + Heatmaps: Per-model detailed view with Dataset × Mitigation.
     Generates detailed table and heatmaps for Utility and Equal Opportunity.
+    Includes 95% CIs if bootstrap is enabled.
     """
     import plotly.express as px
     import plotly.graph_objects as go
@@ -466,16 +485,21 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
     df["Mitigation"] = df["mitigation"].map(mitigation_map)
     df = df.dropna(subset=["Dataset", "Model", "Mitigation"])
 
-    df = df[
-        [
-            "Model",
-            "Mitigation",
-            "Dataset",
-            "overall_physionet_utility",
-            "disparate_impact",
-            "equal_opportunity",
-        ]
-    ].rename(
+    # Select all metric columns including CI bounds
+    metric_cols = [
+        "overall_physionet_utility",
+        "disparate_impact",
+        "equal_opportunity",
+        "overall_physionet_utility_ci_lower",
+        "overall_physionet_utility_ci_upper",
+        "disparate_impact_ci_lower",
+        "disparate_impact_ci_upper",
+        "equal_opportunity_ci_lower",
+        "equal_opportunity_ci_upper",
+    ]
+    keep_cols = ["Model", "Mitigation", "Dataset"] + [c for c in metric_cols if c in df.columns]
+
+    df = df[keep_cols].rename(
         columns={
             "overall_physionet_utility": "Utility",
             "disparate_impact": "Disparate Impact",
@@ -504,9 +528,9 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
                         {
                             "Dataset": dataset if (mitigation == mitigation_order[0] and i == 0) else "",
                             "Mitigation": mitigation if i == 0 else "",
-                            "Utility": round(r["Utility"], 3),
-                            "Disparate Impact": round(r["Disparate Impact"], 3),
-                            "Equal Opportunity": round(r["Equal Opportunity"], 3),
+                            "Utility": _format_metric_with_ci(r, "Utility"),
+                            "Disparate Impact": _format_metric_with_ci(r, "Disparate Impact"),
+                            "Equal Opportunity": _format_metric_with_ci(r, "Equal Opportunity"),
                         }
                     )
 
@@ -553,21 +577,57 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
             pivot = pivot.reindex(dataset_order, axis=0)
             pivot = pivot[mitigation_order]
 
+            # Get CI bounds for heatmap annotations if available
+            ci_lower_col = f"{metric}_ci_lower"
+            ci_upper_col = f"{metric}_ci_upper"
+            has_ci = ci_lower_col in df_m.columns and ci_upper_col in df_m.columns
+
+            if has_ci:
+                pivot_ci_lower = df_m.pivot_table(
+                    index="Dataset", columns="Mitigation", values=ci_lower_col, aggfunc="mean"
+                ).reindex(dataset_order, axis=0)[mitigation_order]
+
+                pivot_ci_upper = df_m.pivot_table(
+                    index="Dataset", columns="Mitigation", values=ci_upper_col, aggfunc="mean"
+                ).reindex(dataset_order, axis=0)[mitigation_order]
+
+                # Create text annotations with CIs
+                text_annotations = []
+                for i, ds in enumerate(dataset_order):
+                    row_text = []
+                    for j, mit in enumerate(mitigation_order):
+                        val = pivot.iloc[i, j]
+                        ci_l = pivot_ci_lower.iloc[i, j]
+                        ci_u = pivot_ci_upper.iloc[i, j]
+                        if pd.notna(val) and pd.notna(ci_l):
+                            text_annotations.append(
+                                f"{val:.3f}<br>[{ci_l:.3f}, {ci_u:.3f}]"
+                            )
+                        else:
+                            text_annotations.append(f"{val:.3f}")
+
+                text_array = np.array(text_annotations).reshape(len(dataset_order), len(mitigation_order))
+            else:
+                text_array = pivot.round(3).values
+
             fig_heat = px.imshow(
                 pivot.round(3),
-                text_auto=".3f",
+                text_auto=False,
                 aspect="auto",
                 color_continuous_scale="RdBu_r",
                 zmin=-1 if metric == "Equal Opportunity" else None,
                 zmax=1 if metric == "Equal Opportunity" else None,
             )
 
+            # Add custom text annotations
+            fig_heat.update_traces(text=text_array, texttemplate="%{text}", textfont={"size": 10})
+
             fig_heat.update_layout(
                 title=f"{model_name} — {metric} Heatmap",
                 xaxis_title="Mitigation",
                 yaxis_title="Dataset",
-                height=500,
-                width=800,
+                height=600,
+                width=900,
             )
 
             heatmap_path = (
