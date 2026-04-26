@@ -35,10 +35,6 @@ Aggregate fairness:
   early_detection_parity
       |detection_lead_gap_hours| — lower is fairer.
 
-  early_detection_equalized_odds
-      max(|TPR gap|, |FPR gap|) evaluated at each threshold.
-      Equivalent to equalized_odds_diff from static classifier.
-
   detection_time_auc
       Area under the detection-time ROC (C-index analog for time-to-event).
 
@@ -516,7 +512,6 @@ def compute_detection_fairness_report(
 
     report["demographic_parity_diff"]      = ppr_f - ppr_m
     report["equal_opportunity_diff"]       = abs(gap("tpr"))
-    report["equalized_odds_diff"]          = max(abs(gap("tpr")), abs(gap("fpr")))
     report["sufficiency_diff"]             = abs(gap("precision"))
 
     # ── Disparate impact (fairlearn / manual) ─────────────────────────────────
@@ -533,23 +528,14 @@ def compute_detection_fairness_report(
     report["equal_opportunity"]    = gap("tpr")          # signed
     report["equal_opportunity_abs"]= abs(gap("tpr"))     # magnitude
 
-    # ── Equalized Odds (fairlearn-aligned) ────────────────────────────────────
-    # Equalized odds: max of |TPR gap| and |FPR gap|.
-    # Matches fairlearn's equalized_odds_difference (uses absolute differences).
-    report["equalized_odds"]       = max(abs(gap("tpr")), abs(gap("fpr")))
-
     # Try fairlearn for an independent cross-check
     try:
         from fairlearn.metrics import (
             demographic_parity_difference,
-            equalized_odds_difference,
             true_positive_rate_difference,
         )
         sensitive_labels = sensitive.astype(int)
         report["fl_demographic_parity_diff"]= demographic_parity_difference(
-            y_true, y_bin_all, sensitive_features=sensitive_labels
-        )
-        report["fl_equalized_odds_diff"]    = equalized_odds_difference(
             y_true, y_bin_all, sensitive_features=sensitive_labels
         )
         report["fl_equal_opportunity_diff"] = true_positive_rate_difference(
@@ -602,7 +588,6 @@ def detection_summary_table(
         "male_pct_in_optimal_window",
         "pct_in_optimal_window_gap",
         "equal_opportunity_diff",
-        "equalized_odds_diff",
         "disparate_impact",
     ]
     keep = [c for c in cols_of_interest if c in results.columns]

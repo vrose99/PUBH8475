@@ -283,7 +283,7 @@ def table_1_summary(results: pd.DataFrame, cfg: Config) -> pd.DataFrame:
         "physionet_utility_gap",
         "pct_detected_at_all_gap", "pct_in_optimal_window_gap",
         "missed_rate_gap", "alarm_fatigue_rate_gap",
-        "disparate_impact", "equal_opportunity_diff", "equalized_odds_diff",
+        "disparate_impact", "equal_opportunity_diff",
         "demographic_parity_diff", "sufficiency_diff",
     ]
     keep = [c for c in priority_cols if c in results.columns]
@@ -335,18 +335,250 @@ def table_2_fairness_pivot(results: pd.DataFrame, cfg: Config) -> pd.DataFrame:
 # ── Convenience: render all standard figures ──────────────────────────────────
 
 def render_all(results: pd.DataFrame, cfg: Config):
-    """Render the full standard figure set for the time-series analysis."""
-    logger.info("Rendering figures ...")
+    """Render critical tables and heatmaps for the time-series analysis."""
+    logger.info("Rendering critical figures ...")
 
     if results.empty or "mitigation" not in results.columns:
         logger.warning("Results are empty or malformed — skipping figure generation.")
         return
 
-    figure_1_utility_bars(results, cfg)
-    figure_2_detection_lead(results, cfg)
-    figure_3_fairness_metrics(results, cfg)
-    figure_4_mitigation_delta(results, cfg)
-    table_1_summary(results, cfg)
-    table_2_fairness_pivot(results, cfg)
+    # Generate critical tables and heatmaps
+    table_baseline_comparison(results, cfg)
+    table_and_heatmaps_per_model(results, cfg)
 
-    logger.info("All figures and tables saved to %s", cfg.output_dir)
+    logger.info("All critical figures and tables saved to %s", cfg.output_dir)
+
+
+# ── Critical Tables and Heatmaps ──────────────────────────────────────────────
+
+def table_baseline_comparison(results: pd.DataFrame, cfg: Config) -> pd.DataFrame:
+    """
+    Table 1: Baseline Model Performance (No Mitigation).
+    Shows Model × Dataset with Utility, Disparate Impact, and Equal Opportunity.
+    """
+    import plotly.graph_objects as go
+
+    dataset_map = {"D0": "Balanced", "D1A": "Row Removal", "D2A": "Missingness"}
+    model_map = {"liu_glm": "GLM", "liu_xgboost": "XGBoost", "liu_rnn": "RNN"}
+
+    df = results.copy()
+    df["dataset_id"] = df["dataset_id"].map(dataset_map)
+    df["model"] = df["model"].map(model_map)
+    df = df.dropna(subset=["dataset_id", "model"])
+    df = df[df["mitigation"] == "none"]
+
+    df = df[
+        [
+            "model",
+            "dataset_id",
+            "overall_physionet_utility",
+            "disparate_impact",
+            "equal_opportunity",
+        ]
+    ].rename(
+        columns={
+            "model": "Model",
+            "dataset_id": "Dataset",
+            "overall_physionet_utility": "Utility",
+            "disparate_impact": "Disparate Impact",
+            "equal_opportunity": "Equal Opportunity",
+        }
+    )
+
+    df = df.round(3)
+
+    model_order = ["GLM", "RNN", "XGBoost"]
+    dataset_order = ["Balanced", "Row Removal", "Missingness"]
+
+    df["Model"] = pd.Categorical(df["Model"], model_order)
+    df["Dataset"] = pd.Categorical(df["Dataset"], dataset_order)
+    df = df.sort_values(["Model", "Dataset"])
+
+    # Group rows with blank model cells
+    rows = []
+    for model in model_order:
+        df_m = df[df["Model"] == model]
+        for i, (_, r) in enumerate(df_m.iterrows()):
+            rows.append(
+                {
+                    "Model": model if i == 0 else "",
+                    "Dataset": r["Dataset"],
+                    "Utility": r["Utility"],
+                    "Disparate Impact": r["Disparate Impact"],
+                    "Equal Opportunity": r["Equal Opportunity"],
+                }
+            )
+
+    table_df = pd.DataFrame(rows)
+
+    fig = go.Figure(
+        data=[
+            go.Table(
+                header=dict(
+                    values=list(table_df.columns),
+                    fill_color="lightgrey",
+                    align="left",
+                    font=dict(size=14),
+                ),
+                cells=dict(
+                    values=[table_df[c] for c in table_df.columns],
+                    align="left",
+                    height=35,
+                ),
+            )
+        ]
+    )
+
+    fig.update_layout(title="Table 1: Baseline Model Performance (No Mitigation)", height=650)
+
+    table_path = cfg.output_dir / "figures" / "table1_baseline.png"
+    try:
+        fig.write_image(table_path, scale=2)
+    except Exception as e:
+        logger.warning("PNG export failed (%s), falling back to HTML", e)
+        table_path = cfg.output_dir / "figures" / "table1_baseline.html"
+        fig.write_html(table_path)
+    logger.info("Saved %s", table_path)
+
+    return table_df
+
+
+def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
+    """
+    Table 2 + Heatmaps: Per-model detailed view with Dataset × Mitigation.
+    Generates detailed table and heatmaps for Utility and Equal Opportunity.
+    """
+    import plotly.express as px
+    import plotly.graph_objects as go
+
+    dataset_map = {"D0": "Balanced", "D1A": "Row Removal", "D2A": "Missingness"}
+    model_map = {"liu_glm": "GLM", "liu_xgboost": "XGBoost", "liu_rnn": "RNN"}
+    mitigation_map = {
+        "none": "Original",
+        "reweighting": "Reweighting",
+        "smote": "SMOTE",
+        "threshold_optimization": "Fairness Penalty",
+    }
+
+    df = results.copy()
+    df["Dataset"] = df["dataset_id"].map(dataset_map)
+    df["Model"] = df["model"].map(model_map)
+    df["Mitigation"] = df["mitigation"].map(mitigation_map)
+    df = df.dropna(subset=["Dataset", "Model", "Mitigation"])
+
+    df = df[
+        [
+            "Model",
+            "Mitigation",
+            "Dataset",
+            "overall_physionet_utility",
+            "disparate_impact",
+            "equal_opportunity",
+        ]
+    ].rename(
+        columns={
+            "overall_physionet_utility": "Utility",
+            "disparate_impact": "Disparate Impact",
+            "equal_opportunity": "Equal Opportunity",
+        }
+    )
+
+    mitigation_order = ["Original", "Reweighting", "SMOTE", "Fairness Penalty"]
+    dataset_order = ["Balanced", "Row Removal", "Missingness"]
+    model_order = ["GLM", "RNN", "XGBoost"]
+
+    for model_name in model_order:
+        df_m = df[df["Model"] == model_name].copy()
+        df_m["Mitigation"] = pd.Categorical(df_m["Mitigation"], mitigation_order)
+        df_m["Dataset"] = pd.Categorical(df_m["Dataset"], dataset_order)
+        df_m = df_m.sort_values(["Dataset", "Mitigation"])
+
+        # ── Table ────────────────────────────────────────────────────────
+        rows = []
+        for dataset in dataset_order:
+            df_ds = df_m[df_m["Dataset"] == dataset]
+            for mitigation in mitigation_order:
+                df_mit = df_ds[df_ds["Mitigation"] == mitigation]
+                for i, (_, r) in enumerate(df_mit.iterrows()):
+                    rows.append(
+                        {
+                            "Dataset": dataset if (mitigation == mitigation_order[0] and i == 0) else "",
+                            "Mitigation": mitigation if i == 0 else "",
+                            "Utility": round(r["Utility"], 3),
+                            "Disparate Impact": round(r["Disparate Impact"], 3),
+                            "Equal Opportunity": round(r["Equal Opportunity"], 3),
+                        }
+                    )
+
+        table_df = pd.DataFrame(rows)
+
+        fig_table = go.Figure(
+            data=[
+                go.Table(
+                    header=dict(
+                        values=list(table_df.columns),
+                        fill_color="lightgrey",
+                        align="left",
+                        font=dict(size=14),
+                    ),
+                    cells=dict(
+                        values=[table_df[c] for c in table_df.columns],
+                        align="left",
+                        height=30,
+                    ),
+                )
+            ]
+        )
+
+        fig_table.update_layout(
+            title=f"Table 2: {model_name} — Dataset-first Comparison", height=900
+        )
+
+        table_path = cfg.output_dir / "figures" / f"table2_{model_name.lower()}.png"
+        try:
+            fig_table.write_image(table_path, scale=2)
+        except Exception as e:
+            logger.warning("PNG export failed for table2 (%s), falling back to HTML", e)
+            table_path = cfg.output_dir / "figures" / f"table2_{model_name.lower()}.html"
+            fig_table.write_html(table_path)
+        logger.info("Saved %s", table_path)
+
+        # ── Heatmaps ────────────────────────────────────────────────────
+        for metric in ["Utility", "Equal Opportunity"]:
+            pivot = df_m.pivot_table(
+                index="Dataset", columns="Mitigation", values=metric, aggfunc="mean"
+            )
+
+            # Reorder to match desired order
+            pivot = pivot.reindex(dataset_order, axis=0)
+            pivot = pivot[mitigation_order]
+
+            fig_heat = px.imshow(
+                pivot.round(3),
+                text_auto=".3f",
+                aspect="auto",
+                color_continuous_scale="RdBu_r",
+                zmin=-1 if metric == "Equal Opportunity" else None,
+                zmax=1 if metric == "Equal Opportunity" else None,
+            )
+
+            fig_heat.update_layout(
+                title=f"{model_name} — {metric} Heatmap",
+                xaxis_title="Mitigation",
+                yaxis_title="Dataset",
+                height=500,
+                width=800,
+            )
+
+            heatmap_path = (
+                cfg.output_dir / "figures" / f"heatmap_{model_name.lower()}_{metric.replace(' ', '_').lower()}.png"
+            )
+            try:
+                fig_heat.write_image(heatmap_path, scale=2)
+            except Exception as e:
+                logger.warning("PNG export failed for heatmap (%s), falling back to HTML", e)
+                heatmap_path = (
+                    cfg.output_dir / "figures" / f"heatmap_{model_name.lower()}_{metric.replace(' ', '_').lower()}.html"
+                )
+                fig_heat.write_html(heatmap_path)
+            logger.info("Saved %s", heatmap_path)

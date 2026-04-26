@@ -2,12 +2,12 @@
 Time-series dataset perturbations for fairness evaluation.
 
 All perturbations are applied to patient-hour rows, preserving the time-series structure.
+All sepsis cases are preserved to maintain case balance.
 
-Dataset hierarchy:
-  D0 — Parent: original data with forced gender parity (larger gender group subsampled)
-  D1A/D1B — Row removal: 75% of female/male rows removed from D0
-  D2A/D2B — Missingness-at-random (MAR): 25% of measurements set to NaN for female/male rows
-  D3A/D3B — Gaussian noise: 25% of measurements get random noise added for female/male rows
+Dataset variants:
+  D0 — Original: gender-balanced with all sepsis cases preserved
+  D1A — Row removal: 50% of non-sepsis female rows removed from D0
+  D2A — Missingness-at-random (MAR): 25% of non-sepsis female rows have 25% of measurements set to NaN
 
 All variants are child datasets of D0, ensuring a controlled experiment comparing
 the effect of single perturbation types while holding the base cohort constant.
@@ -51,8 +51,13 @@ def build_all_datasets(
     rng: np.random.Generator,
 ) -> Dict[str, pd.DataFrame]:
     """
-    Build all perturbation variants (D0–D3B) from a time-series dataset.
+    Build three perturbation variants from a time-series dataset.
     Returns {dataset_id: df_ts_variant}.
+
+    Variants:
+      D0 — Original: gender-balanced with all sepsis cases preserved
+      D1A — Row removal: 50% of non-sepsis female rows removed
+      D2A — MAR: 25% of non-sepsis female rows have 25% of measurements set to NaN
     """
     sensitive_col = cfg.fairness.sensitive_column
     f_val = cfg.fairness.female_value
@@ -61,26 +66,16 @@ def build_all_datasets(
     # ── D0: Parent — forced gender parity ────────────────────────────────────
     df_d0 = _dataset_parent_parity(df_ts, cfg, rng)
 
-    # ── D1A/D1B: Row removal ─────────────────────────────────────────────────
+    # ── D1A: Row removal (females only) ──────────────────────────────────────
     df_d1a = _dataset_row_removal(df_d0, f_val, sensitive_col, rng)
-    df_d1b = _dataset_row_removal(df_d0, m_val, sensitive_col, rng)
 
-    # ── D2A/D2B: MAR (missingness-at-random) ────────────────────────────────
+    # ── D2A: MAR (females only) ──────────────────────────────────────────────
     df_d2a = _dataset_mar(df_d0, f_val, sensitive_col, rng)
-    df_d2b = _dataset_mar(df_d0, m_val, sensitive_col, rng)
-
-    # ── D3A/D3B: Gaussian noise ─────────────────────────────────────────────
-    df_d3a = _dataset_noise(df_d0, f_val, sensitive_col, rng)
-    df_d3b = _dataset_noise(df_d0, m_val, sensitive_col, rng)
 
     variants = {
         "D0": df_d0,
         "D1A": df_d1a,
-        "D1B": df_d1b,
         "D2A": df_d2a,
-        "D2B": df_d2b,
-        "D3A": df_d3a,
-        "D3B": df_d3b,
     }
 
     for did, dff in variants.items():
@@ -166,7 +161,7 @@ def _dataset_parent_parity(
     return df.reset_index(drop=True)
 
 
-# ── D1A/D1B: Row removal ──────────────────────────────────────────────────
+# ── D1A: Row removal ──────────────────────────────────────────────────────
 
 def _dataset_row_removal(
     df_ts: pd.DataFrame,
@@ -201,7 +196,7 @@ def _dataset_row_removal(
     return df.reset_index(drop=True)
 
 
-# ── D2A/D2B: Missingness-at-random (MAR) ─────────────────────────────────
+# ── D2A: Missingness-at-random (MAR) ──────────────────────────────────────
 
 def _dataset_mar(
     df_ts: pd.DataFrame,
@@ -211,16 +206,23 @@ def _dataset_mar(
     missing_fraction: float = 0.25,
 ) -> pd.DataFrame:
     """
-    For target gender group: randomly select 25% of rows and set 25% of
-    numeric measurements to NaN.  Simulates differential data collection quality.
+    For target gender group: randomly select 25% of non-sepsis rows and set 25% of
+    numeric measurements to NaN. Preserves all sepsis cases (target=1).
+    Simulates differential data collection quality.
     """
     df = df_ts.copy()
     target_mask = (df[sensitive_col] == target_gender).values
-    n_target = target_mask.sum()
+    non_sepsis_mask = (df["target"] == 0).values
+    perturb_mask = target_mask & non_sepsis_mask
 
-    # Select 25% of target rows to perturb
-    n_perturb = max(1, int(n_target * missing_fraction))
-    perturb_idx = rng.choice(np.where(target_mask)[0], size=n_perturb, replace=False)
+    n_available = perturb_mask.sum()
+
+    # Select 25% of available non-sepsis target rows to perturb
+    n_perturb = max(1, int(n_available * missing_fraction))
+    if n_available > 0:
+        perturb_idx = rng.choice(np.where(perturb_mask)[0], size=min(n_perturb, n_available), replace=False)
+    else:
+        perturb_idx = []
 
     # For each perturbed row, blank out 25% of numeric columns
     numeric_cols = _get_numeric_cols(df)
@@ -229,42 +231,5 @@ def _dataset_mar(
     for idx in perturb_idx:
         cols_to_blank = rng.choice(numeric_cols, size=n_cols_blank, replace=False)
         df.iloc[idx, df.columns.get_indexer(cols_to_blank)] = np.nan
-
-    return df.reset_index(drop=True)
-
-
-# ── D3A/D3B: Gaussian noise ──────────────────────────────────────────────
-
-def _dataset_noise(
-    df_ts: pd.DataFrame,
-    target_gender: int,
-    sensitive_col: str,
-    rng: np.random.Generator,
-    noise_fraction: float = 0.25,
-    noise_std_mult: float = 1.0,
-) -> pd.DataFrame:
-    """
-    For target gender group: randomly select 25% of rows and add Gaussian noise
-    (1× std) to 25% of numeric measurements.
-    """
-    df = df_ts.copy()
-    target_mask = (df[sensitive_col] == target_gender).values
-    n_target = target_mask.sum()
-
-    # Select 25% of target rows to perturb
-    n_perturb = max(1, int(n_target * noise_fraction))
-    perturb_idx = rng.choice(np.where(target_mask)[0], size=n_perturb, replace=False)
-
-    numeric_cols = _get_numeric_cols(df)
-    n_cols_noise = max(1, int(len(numeric_cols) * noise_fraction))
-
-    for idx in perturb_idx:
-        cols_to_noise = rng.choice(numeric_cols, size=n_cols_noise, replace=False)
-        for col in cols_to_noise:
-            val = df.iloc[idx][col]
-            if pd.notna(val):
-                std = float(df[col].std(skipna=True))
-                noise = rng.normal(0, std * noise_std_mult)
-                df.iloc[idx, df.columns.get_indexer([col])] = val + noise
 
     return df.reset_index(drop=True)

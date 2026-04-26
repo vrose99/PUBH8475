@@ -41,6 +41,7 @@ def evaluate_ts_single(
     mitigation_name: str,
     cfg: Config,
     rng: np.random.Generator,
+    return_predictions: bool = False,
 ) -> dict:
     """
     Train and evaluate one (model, mitigation) combination on the time-series
@@ -170,6 +171,13 @@ def evaluate_ts_single(
         (y_prob[m_mask] >= best_threshold).mean() * 100 if m_mask.any() else float("nan"),
     )
 
+    if return_predictions:
+        report["_y_prob"] = y_prob
+        report["_y_test"] = y_test
+        report["_s_test"] = s_test
+        report["_times_test"] = times_test
+        report["_patient_ids_test"] = patient_ids_test
+
     return report
 
 
@@ -224,4 +232,164 @@ def run_timeseries_evaluation(
 
     id_cols = ["dataset_id", "model", "mitigation"]
     other   = [c for c in results.columns if c not in id_cols]
-    return results[id_cols + other]
+    results = results[id_cols + other]
+
+    # Apply bootstrap if enabled
+    if cfg.bootstrap.enabled:
+        results = apply_bootstrap_to_results(
+            results, df_ts, cfg, rng, dataset_id
+        )
+
+    return results
+
+
+# ── Bootstrap utilities ────────────────────────────────────────────────────
+
+def _bootstrap_resample_patients(
+    y_prob: np.ndarray,
+    y_true: np.ndarray,
+    sensitive: np.ndarray,
+    hours_until_sepsis: np.ndarray,
+    patient_ids: np.ndarray,
+    rng: np.random.Generator,
+) -> tuple:
+    """
+    Resample test set by patient (with replacement) for bootstrap.
+    Returns resampled arrays maintaining the same structure.
+    """
+    unique_pids = np.unique(patient_ids)
+    resampled_pids = rng.choice(unique_pids, size=len(unique_pids), replace=True)
+
+    mask = np.isin(patient_ids, resampled_pids)
+    indices = np.where(mask)[0]
+
+    # Create mapping from original pids to indices
+    pid_to_idx = {pid: np.where(patient_ids == pid)[0] for pid in unique_pids}
+
+    # Resample indices based on patient resampling
+    boot_indices = []
+    for pid in resampled_pids:
+        pid_indices = pid_to_idx[pid]
+        boot_indices.extend(pid_indices)
+
+    boot_indices = np.array(boot_indices)
+    return (
+        y_prob[boot_indices],
+        y_true[boot_indices],
+        sensitive[boot_indices],
+        hours_until_sepsis[boot_indices],
+    )
+
+
+def _compute_bootstrap_metrics(
+    y_prob: np.ndarray,
+    y_true: np.ndarray,
+    sensitive: np.ndarray,
+    hours_until_sepsis: np.ndarray,
+    cfg: Config,
+) -> dict:
+    """Compute fairness metrics for a single bootstrap sample."""
+    report = compute_detection_fairness_report(
+        y_prob=y_prob,
+        y_true=y_true,
+        sensitive=sensitive,
+        hours_until_sepsis=hours_until_sepsis,
+        cfg=cfg,
+    )
+    return report
+
+
+def apply_bootstrap_to_results(
+    results: pd.DataFrame,
+    df_ts: pd.DataFrame,
+    cfg: Config,
+    rng: np.random.Generator,
+    dataset_id: str,
+) -> pd.DataFrame:
+    """
+    Apply bootstrap resampling to test metrics.
+    Trains model once, then bootstraps the test set predictions.
+    """
+    bootstrap_results = []
+
+    for idx, row in results.iterrows():
+        model_name = row["model"]
+        mitigation_name = row["mitigation"]
+
+        logger.info(
+            "Bootstrapping %s / %s (%d iterations)",
+            model_name, mitigation_name, cfg.bootstrap.n_iterations,
+        )
+
+        # Train model once and get predictions
+        boot_result = evaluate_ts_single(
+            df_ts=df_ts,
+            model_name=model_name,
+            mitigation_name=mitigation_name,
+            cfg=cfg,
+            rng=rng,
+            return_predictions=True,
+        )
+
+        # Extract predictions
+        y_prob = boot_result.pop("_y_prob")
+        y_test = boot_result.pop("_y_test")
+        s_test = boot_result.pop("_s_test")
+        times_test = boot_result.pop("_times_test")
+        patient_ids_test = boot_result.pop("_patient_ids_test")
+
+        # Store baseline metrics
+        baseline_metrics = {col: boot_result[col] for col in boot_result.keys()}
+
+        # Bootstrap resample test set
+        bootstrap_metrics = {col: [] for col in baseline_metrics.keys()}
+
+        for boot_iter in tqdm(
+            range(cfg.bootstrap.n_iterations),
+            desc=f"Bootstrap {model_name}/{mitigation_name}",
+            leave=False,
+        ):
+            try:
+                # Resample test set by patient
+                y_prob_boot, y_test_boot, s_test_boot, times_test_boot = (
+                    _bootstrap_resample_patients(
+                        y_prob, y_test, s_test, times_test,
+                        patient_ids_test, rng,
+                    )
+                )
+
+                # Compute metrics on bootstrap sample
+                boot_metrics = _compute_bootstrap_metrics(
+                    y_prob_boot, y_test_boot, s_test_boot, times_test_boot, cfg
+                )
+
+                # Store metrics
+                for col in baseline_metrics.keys():
+                    if col in boot_metrics:
+                        bootstrap_metrics[col].append(boot_metrics[col])
+
+            except Exception as exc:
+                logger.warning(
+                    "Bootstrap iteration %d failed for %s/%s: %s",
+                    boot_iter, model_name, mitigation_name, exc,
+                )
+
+        # Aggregate bootstrap metrics
+        agg_row = {
+            "dataset_id": dataset_id,
+            "model": model_name,
+            "mitigation": mitigation_name,
+        }
+
+        # Add baseline values and bootstrap CIs
+        for col, baseline_val in baseline_metrics.items():
+            agg_row[col] = baseline_val
+
+            if col in bootstrap_metrics and bootstrap_metrics[col]:
+                vals = np.array(bootstrap_metrics[col])
+                agg_row[f"{col}_ci_lower"] = float(np.percentile(vals, 2.5))
+                agg_row[f"{col}_ci_upper"] = float(np.percentile(vals, 97.5))
+
+        bootstrap_results.append(agg_row)
+
+    return pd.DataFrame(bootstrap_results)

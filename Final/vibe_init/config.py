@@ -50,6 +50,12 @@ class MitigationConfig:
 
 
 @dataclass
+class BootstrapConfig:
+    enabled: bool = False
+    n_iterations: int = 100
+
+
+@dataclass
 class Config:
     # --- Paths ---
     data_dir: Path = Path("data/physionet_sepsis")
@@ -59,6 +65,7 @@ class Config:
     model: ModelConfig = field(default_factory=ModelConfig)
     fairness: FairnessConfig = field(default_factory=FairnessConfig)
     mitigation: MitigationConfig = field(default_factory=MitigationConfig)
+    bootstrap: BootstrapConfig = field(default_factory=BootstrapConfig)
 
     # --- Optional pipeline steps ---
     run_analysis: bool = True
@@ -66,12 +73,8 @@ class Config:
 
     # --- Dataset variants to run ---
     run_dataset_d0:  bool = True   # parent (forced parity)
-    run_dataset_d1a: bool = True   # 75% female rows removed
-    run_dataset_d1b: bool = True   # 75% male rows removed
-    run_dataset_d2a: bool = True   # 25% MAR for female rows
-    run_dataset_d2b: bool = True   # 25% MAR for male rows
-    run_dataset_d3a: bool = True   # 25% noise for female rows
-    run_dataset_d3b: bool = True   # 25% noise for male rows
+    run_dataset_d1a: bool = True   # 50% non-sepsis female rows removed
+    run_dataset_d2a: bool = True   # 25% MAR on non-sepsis female rows
 
     random_state: int = 42
 

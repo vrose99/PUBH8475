@@ -70,6 +70,10 @@ def parse_args():
     p.add_argument("--seed",         type=int,  default=42)
     p.add_argument("--no-test",      action="store_true",
                    help="Override the TEST flag and run the full production pipeline")
+    p.add_argument("--bootstrap",    action="store_true",
+                   help="Enable bootstrap resampling for metric estimates")
+    p.add_argument("--bootstrap-iters", type=int, default=100,
+                   help="Number of bootstrap iterations (default: 100)")
     return p.parse_args()
 
 
@@ -102,8 +106,6 @@ def _print_phase(label: str, results: pd.DataFrame):
          "disparate_impact"),
         ("Equal Opportunity  TPR(F)−TPR(M)  [ideal = 0]",
          "equal_opportunity"),
-        ("Equalized Odds  max(|TPR gap|,|FPR gap|)  [ideal = 0]",
-         "equalized_odds"),
     ]
     for title, col in metrics:
         tbl = _pivot(col)
@@ -144,6 +146,9 @@ def main():
         cfg.run_analysis = False
     if args.no_report:
         cfg.run_report = False
+
+    cfg.bootstrap.enabled = args.bootstrap
+    cfg.bootstrap.n_iterations = args.bootstrap_iters
 
     cfg.__post_init__()
     rng = np.random.default_rng(cfg.random_state)
@@ -190,11 +195,7 @@ def main():
     dataset_flags = {
         "D0": cfg.run_dataset_d0,
         "D1A": cfg.run_dataset_d1a,
-        "D1B": cfg.run_dataset_d1b,
         "D2A": cfg.run_dataset_d2a,
-        "D2B": cfg.run_dataset_d2b,
-        "D3A": cfg.run_dataset_d3a,
-        "D3B": cfg.run_dataset_d3b,
     }
     datasets = {did: dff for did, dff in datasets.items() if dataset_flags.get(did, True)}
 
