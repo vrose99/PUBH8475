@@ -1,274 +1,226 @@
 """
-Dataset perturbation generators.
+Time-series dataset perturbations for fairness evaluation.
 
-Each function takes the clean DataFrame and returns a perturbed copy tagged
-with a 'dataset_id' string used throughout the rest of the pipeline.
+All perturbations are applied to patient-hour rows, preserving the time-series structure.
 
-Dataset IDs
------------
-  "D0"      original data
-  "D1A"     row-removal — women underrepresented
-  "D1B"     row-removal — men underrepresented
-  "D2A"     MAR — missing values injected for women
-  "D2B"     MAR — missing values injected for men
-  "D3A"     noise — Gaussian noise injected for women  (optional)
-  "D3B"     noise — Gaussian noise injected for men    (optional)
+Dataset hierarchy:
+  D0 — Parent: original data with forced gender parity (larger gender group subsampled)
+  D1A/D1B — Row removal: 75% of female/male rows removed from D0
+  D2A/D2B — Missingness-at-random (MAR): 25% of measurements set to NaN for female/male rows
+  D3A/D3B — Gaussian noise: 25% of measurements get random noise added for female/male rows
 
-All functions preserve the original DataFrame (defensive copy).
+All variants are child datasets of D0, ensuring a controlled experiment comparing
+the effect of single perturbation types while holding the base cohort constant.
 """
 
 import logging
-from typing import Optional
 
 import numpy as np
 import pandas as pd
 
 from config import Config
-from data_loader import LABEL_COL
 
 logger = logging.getLogger(__name__)
 
-# Columns that are metadata / demographics — never perturbed
-_META_COLS = {
-    "Age", "Gender", "Unit1", "Unit2", "HospAdmTime", "ICULOS",
-    LABEL_COL, "dataset_id",
-}
+_BASE_NUMERIC_COLS = [
+    "HR", "O2Sat", "Temp", "SBP", "MAP", "DBP", "Resp", "EtCO2",
+    "BaseExcess", "HCO3", "FiO2", "pH", "PaCO2", "SaO2", "AST", "BUN",
+    "Alkalinephos", "Calcium", "Chloride", "Creatinine", "Bilirubin_direct",
+    "Glucose", "Lactate", "Magnesium", "Phosphate", "Potassium",
+    "Bilirubin_total", "TroponinI", "Hct", "Hgb", "PTT", "WBC",
+    "Fibrinogen", "Platelets",
+]
 
 
-# ── Internal helpers ──────────────────────────────────────────────────────────
-
-def _numeric_feature_cols(df: pd.DataFrame, cfg: Config) -> list[str]:
+def _get_numeric_cols(df) -> list:
     """
-    Return numeric feature columns present in the (aggregated) DataFrame.
-
-    After aggregation each raw signal becomes HR_mean, HR_std, HR_min, etc.
-    We exclude demographics and metadata so only clinical features are perturbed.
+    Detect numeric clinical columns in the DataFrame.
+    In the time-series dataset these are stored with a '_raw' suffix.
+    Falls back to bare names if raw-suffixed columns are not present.
     """
-    sensitive = cfg.fairness.sensitive_column
-    exclude = _META_COLS | {sensitive}
-    return [
-        c for c in df.select_dtypes(include="number").columns
-        if c not in exclude
-    ]
+    raw_cols = [f"{c}_raw" for c in _BASE_NUMERIC_COLS if f"{c}_raw" in df.columns]
+    if raw_cols:
+        return raw_cols
+    return [c for c in _BASE_NUMERIC_COLS if c in df.columns]
 
-
-def _select_mar_columns(df: pd.DataFrame, cfg: Config) -> list[str]:
-    """
-    Choose which columns to blank out.  Uses cfg.perturbation.mar_columns if
-    set; otherwise picks the mar_n_columns numeric columns with the highest
-    completeness (realistic MAR pattern).
-    """
-    if cfg.perturbation.mar_columns:
-        # validate that requested columns actually exist
-        present = [c for c in cfg.perturbation.mar_columns if c in df.columns]
-        if not present:
-            logger.warning(
-                "mar_columns %s not found in DataFrame — falling back to auto-select",
-                cfg.perturbation.mar_columns,
-            )
-        else:
-            return present
-
-    candidates = _numeric_feature_cols(df, cfg)
-    if not candidates:
-        logger.error("No numeric feature columns found — check DataFrame schema")
-        return []
-    completeness = df[candidates].notna().mean().sort_values(ascending=False)
-    return completeness.index[: cfg.perturbation.mar_n_columns].tolist()
-
-
-def _select_noise_columns(df: pd.DataFrame, cfg: Config) -> list[str]:
-    """Same column selection as MAR so D2 and D3 target the same features."""
-    if cfg.perturbation.noise_columns:
-        present = [c for c in cfg.perturbation.noise_columns if c in df.columns]
-        if present:
-            return present
-        logger.warning("noise_columns not found — falling back to auto-select")
-
-    candidates = _numeric_feature_cols(df, cfg)
-    if not candidates:
-        return []
-    completeness = df[candidates].notna().mean().sort_values(ascending=False)
-    return completeness.index[: cfg.perturbation.noise_n_columns].tolist()
-
-
-def _group_mask(df: pd.DataFrame, cfg: Config, group: str) -> pd.Series:
-    """Boolean mask selecting 'female' or 'male' rows."""
-    col = cfg.fairness.sensitive_column
-    val = cfg.fairness.female_value if group == "female" else cfg.fairness.male_value
-    return df[col] == val
-
-
-# ── Public perturbation functions ─────────────────────────────────────────────
-
-def dataset_original(df: pd.DataFrame) -> pd.DataFrame:
-    out = df.copy()
-    out["dataset_id"] = "D0"
-    return out
-
-
-def dataset_row_removal(
-    df: pd.DataFrame,
-    cfg: Config,
-    underrepresented_group: str,   # "female" | "male"
-    rng: Optional[np.random.Generator] = None,
-) -> pd.DataFrame:
-    """
-    Drop `row_removal_fraction` of the target group's rows so that group is
-    severely underrepresented in training data.
-
-    Running this for both groups separately (D1A=women removed, D1B=men
-    removed) is intentional: the symmetric result — whichever group is
-    underrepresented suffers in model performance — demonstrates the problem
-    is structural rather than group-specific.
-    """
-    rng = rng or np.random.default_rng(cfg.random_state)
-    out = df.copy()
-    mask = _group_mask(out, cfg, underrepresented_group)
-    group_idx = out.index[mask].tolist()
-    n_drop = int(len(group_idx) * cfg.perturbation.row_removal_fraction)
-    drop_idx = rng.choice(group_idx, size=n_drop, replace=False)
-    out = out.drop(index=drop_idx).reset_index(drop=True)
-
-    dataset_id = "D1A" if underrepresented_group == "female" else "D1B"
-    out["dataset_id"] = dataset_id
-
-    logger.info(
-        "%s: dropped %d/%d %s rows (%.0f%% removed). Remaining group balance: "
-        "female=%.1f%%",
-        dataset_id,
-        n_drop,
-        len(group_idx),
-        underrepresented_group,
-        cfg.perturbation.row_removal_fraction * 100,
-        100 * _group_mask(out, cfg, "female").mean(),
-    )
-    return out
-
-
-def dataset_mar(
-    df: pd.DataFrame,
-    cfg: Config,
-    affected_group: str,   # "female" | "male"
-    rng: Optional[np.random.Generator] = None,
-) -> pd.DataFrame:
-    """
-    Inject Missing-At-Random (MAR) values for a subgroup.
-
-    For `mar_missing_fraction` of the target group's rows, set
-    `mar_n_columns` clinical columns to NaN.  Column selection favours
-    columns that are already reasonably complete (realistic MAR pattern).
-
-    Note: patients outside the affected group are untouched, so downstream
-    imputation must handle the resulting asymmetric missingness.
-    """
-    rng = rng or np.random.default_rng(cfg.random_state)
-    out = df.copy()
-    mar_cols = _select_mar_columns(out, cfg)
-    mask = _group_mask(out, cfg, affected_group)
-    group_idx = out.index[mask].tolist()
-    n_affected = int(len(group_idx) * cfg.perturbation.mar_missing_fraction)
-    affected_idx = rng.choice(group_idx, size=n_affected, replace=False)
-    out.loc[affected_idx, mar_cols] = np.nan
-
-    dataset_id = "D2A" if affected_group == "female" else "D2B"
-    out["dataset_id"] = dataset_id
-
-    logger.info(
-        "%s: injected NaN into %d cols for %d/%d %s rows (%.0f%%). "
-        "Columns: %s",
-        dataset_id,
-        len(mar_cols),
-        n_affected,
-        len(group_idx),
-        affected_group,
-        cfg.perturbation.mar_missing_fraction * 100,
-        mar_cols,
-    )
-    return out
-
-
-def dataset_noise(
-    df: pd.DataFrame,
-    cfg: Config,
-    affected_group: str,   # "female" | "male"
-    rng: Optional[np.random.Generator] = None,
-) -> pd.DataFrame:
-    """
-    Inject Gaussian noise into a subset of columns for one subgroup.
-
-    Noise scale = column_std * cfg.perturbation.noise_std_multiplier.
-    This simulates systematic measurement error or data-quality differences
-    across subgroups (e.g., different monitoring equipment, documentation
-    practices).
-    """
-    rng = rng or np.random.default_rng(cfg.random_state)
-    out = df.copy()
-    noise_cols = _select_noise_columns(out, cfg)
-    mask = _group_mask(out, cfg, affected_group)
-    group_idx = out.index[mask].tolist()
-
-    for col in noise_cols:
-        col_std = out[col].std(skipna=True)
-        noise = rng.normal(
-            loc=0,
-            scale=col_std * cfg.perturbation.noise_std_multiplier,
-            size=len(group_idx),
-        )
-        out.loc[group_idx, col] = out.loc[group_idx, col] + noise
-
-    dataset_id = "D3A" if affected_group == "female" else "D3B"
-    out["dataset_id"] = dataset_id
-
-    logger.info(
-        "%s: added Gaussian noise (scale=%.1f×std) to %d cols for %s rows.",
-        dataset_id,
-        cfg.perturbation.noise_std_multiplier,
-        len(noise_cols),
-        affected_group,
-    )
-    return out
-
-
-# ── Dataset catalogue builder ─────────────────────────────────────────────────
 
 def build_all_datasets(
-    df: pd.DataFrame,
+    df_ts: pd.DataFrame,
     cfg: Config,
-    rng: Optional[np.random.Generator] = None,
+    rng: np.random.Generator,
 ) -> dict[str, pd.DataFrame]:
     """
-    Return a dict mapping dataset_id → perturbed DataFrame according to
-    the flags in cfg.
-
-    Always includes "D0" (original).
+    Build all perturbation variants (D0–D3B) from a time-series dataset.
+    Returns {dataset_id: df_ts_variant}.
     """
-    rng = rng or np.random.default_rng(cfg.random_state)
-    datasets: dict[str, pd.DataFrame] = {"D0": dataset_original(df)}
+    sensitive_col = cfg.fairness.sensitive_column
+    f_val = cfg.fairness.female_value
+    m_val = cfg.fairness.male_value
 
-    if cfg.run_dataset_1a:
-        d = dataset_row_removal(df, cfg, "female", rng)
-        datasets["D1A"] = d
+    # ── D0: Parent — forced gender parity ────────────────────────────────────
+    df_d0 = _dataset_parent_parity(df_ts, cfg, rng)
 
-    if cfg.run_dataset_1b:
-        d = dataset_row_removal(df, cfg, "male", rng)
-        datasets["D1B"] = d
+    # ── D1A/D1B: Row removal ─────────────────────────────────────────────────
+    df_d1a = _dataset_row_removal(df_d0, f_val, sensitive_col, rng)
+    df_d1b = _dataset_row_removal(df_d0, m_val, sensitive_col, rng)
 
-    if cfg.run_dataset_2a:
-        d = dataset_mar(df, cfg, "female", rng)
-        datasets["D2A"] = d
+    # ── D2A/D2B: MAR (missingness-at-random) ────────────────────────────────
+    df_d2a = _dataset_mar(df_d0, f_val, sensitive_col, rng)
+    df_d2b = _dataset_mar(df_d0, m_val, sensitive_col, rng)
 
-    if cfg.run_dataset_2b:
-        d = dataset_mar(df, cfg, "male", rng)
-        datasets["D2B"] = d
+    # ── D3A/D3B: Gaussian noise ─────────────────────────────────────────────
+    df_d3a = _dataset_noise(df_d0, f_val, sensitive_col, rng)
+    df_d3b = _dataset_noise(df_d0, m_val, sensitive_col, rng)
 
-    if cfg.run_dataset_3a:
-        d = dataset_noise(df, cfg, "female", rng)
-        datasets["D3A"] = d
+    variants = {
+        "D0": df_d0,
+        "D1A": df_d1a,
+        "D1B": df_d1b,
+        "D2A": df_d2a,
+        "D2B": df_d2b,
+        "D3A": df_d3a,
+        "D3B": df_d3b,
+    }
 
-    if cfg.run_dataset_3b:
-        d = dataset_noise(df, cfg, "male", rng)
-        datasets["D3B"] = d
+    for did, dff in variants.items():
+        n = dff["patient_id"].nunique()
+        rows = len(dff)
+        f_rows = len(dff[dff[sensitive_col] == f_val])
+        m_rows = len(dff[dff[sensitive_col] == m_val])
+        logger.info(
+            "%s: %d patients, %d rows | F: %d rows | M: %d rows",
+            did, n, rows, f_rows, m_rows,
+        )
 
-    logger.info("Built %d dataset variants: %s", len(datasets), list(datasets))
-    return datasets
+    return variants
+
+
+# ── D0: Parent dataset with forced gender parity ────────────────────────────
+
+def _dataset_parent_parity(
+    df_ts: pd.DataFrame,
+    cfg: Config,
+    rng: np.random.Generator,
+) -> pd.DataFrame:
+    """
+    Subsample the larger gender group to match the smaller one, ensuring
+    balanced representation. This is the parent dataset for all D1–D3 variants.
+    """
+    df = df_ts.copy()
+    sensitive_col = cfg.fairness.sensitive_column
+    f_val = cfg.fairness.female_value
+    m_val = cfg.fairness.male_value
+
+    f_mask = df[sensitive_col] == f_val
+    m_mask = df[sensitive_col] == m_val
+
+    n_f = df[f_mask]["patient_id"].nunique()
+    n_m = df[m_mask]["patient_id"].nunique()
+
+    # Subsample the larger group to match the smaller
+    target_n = min(n_f, n_m)
+    logger.info(f"D0: equalizing gender balance — target {target_n} patients per group")
+
+    if n_f > target_n:
+        f_pids = df[f_mask]["patient_id"].unique()
+        keep_f_pids = rng.choice(f_pids, size=target_n, replace=False)
+        df = df[~(f_mask & ~df["patient_id"].isin(keep_f_pids))]
+    elif n_m > target_n:
+        m_pids = df[m_mask]["patient_id"].unique()
+        keep_m_pids = rng.choice(m_pids, size=target_n, replace=False)
+        df = df[~(m_mask & ~df["patient_id"].isin(keep_m_pids))]
+
+    return df.reset_index(drop=True)
+
+
+# ── D1A/D1B: Row removal ──────────────────────────────────────────────────
+
+def _dataset_row_removal(
+    df_ts: pd.DataFrame,
+    target_gender: int,
+    sensitive_col: str,
+    rng: np.random.Generator,
+    removal_fraction: float = 0.75,
+) -> pd.DataFrame:
+    """
+    Remove 75% of rows for the target gender group.
+    Removes at the patient level to preserve time-series structure.
+    """
+    df = df_ts.copy()
+    target_mask = df[sensitive_col] == target_gender
+    target_pids = df[target_mask]["patient_id"].unique()
+
+    n_remove = max(1, int(len(target_pids) * removal_fraction))
+    remove_pids = rng.choice(target_pids, size=n_remove, replace=False)
+
+    df = df[~df["patient_id"].isin(remove_pids)]
+    return df.reset_index(drop=True)
+
+
+# ── D2A/D2B: Missingness-at-random (MAR) ─────────────────────────────────
+
+def _dataset_mar(
+    df_ts: pd.DataFrame,
+    target_gender: int,
+    sensitive_col: str,
+    rng: np.random.Generator,
+    missing_fraction: float = 0.25,
+) -> pd.DataFrame:
+    """
+    For target gender group: randomly select 25% of rows and set 25% of
+    numeric measurements to NaN.  Simulates differential data collection quality.
+    """
+    df = df_ts.copy()
+    target_mask = (df[sensitive_col] == target_gender).values
+    n_target = target_mask.sum()
+
+    # Select 25% of target rows to perturb
+    n_perturb = max(1, int(n_target * missing_fraction))
+    perturb_idx = rng.choice(np.where(target_mask)[0], size=n_perturb, replace=False)
+
+    # For each perturbed row, blank out 25% of numeric columns
+    numeric_cols = _get_numeric_cols(df)
+    n_cols_blank = max(1, int(len(numeric_cols) * missing_fraction))
+
+    for idx in perturb_idx:
+        cols_to_blank = rng.choice(numeric_cols, size=n_cols_blank, replace=False)
+        df.iloc[idx, df.columns.get_indexer(cols_to_blank)] = np.nan
+
+    return df.reset_index(drop=True)
+
+
+# ── D3A/D3B: Gaussian noise ──────────────────────────────────────────────
+
+def _dataset_noise(
+    df_ts: pd.DataFrame,
+    target_gender: int,
+    sensitive_col: str,
+    rng: np.random.Generator,
+    noise_fraction: float = 0.25,
+    noise_std_mult: float = 1.0,
+) -> pd.DataFrame:
+    """
+    For target gender group: randomly select 25% of rows and add Gaussian noise
+    (1× std) to 25% of numeric measurements.
+    """
+    df = df_ts.copy()
+    target_mask = (df[sensitive_col] == target_gender).values
+    n_target = target_mask.sum()
+
+    # Select 25% of target rows to perturb
+    n_perturb = max(1, int(n_target * noise_fraction))
+    perturb_idx = rng.choice(np.where(target_mask)[0], size=n_perturb, replace=False)
+
+    numeric_cols = _get_numeric_cols(df)
+    n_cols_noise = max(1, int(len(numeric_cols) * noise_fraction))
+
+    for idx in perturb_idx:
+        cols_to_noise = rng.choice(numeric_cols, size=n_cols_noise, replace=False)
+        for col in cols_to_noise:
+            val = df.iloc[idx][col]
+            if pd.notna(val):
+                std = float(df[col].std(skipna=True))
+                noise = rng.normal(0, std * noise_std_mult)
+                df.iloc[idx, df.columns.get_indexer([col])] = val + noise
+
+    return df.reset_index(drop=True)

@@ -77,66 +77,181 @@ from fairness import (
 
 # ── PhysioNet 2019 Challenge Utility Function ────────────────────────────────
 
+def _row_utility(
+    dt: np.ndarray,
+    y_pred: np.ndarray,
+    is_septic_row: np.ndarray,
+    dt_early: float,
+    dt_optimal: float,
+    dt_late: float,
+    max_u_tp: float,
+    min_u_fn: float,
+    u_fp: float,
+    u_tn: float,
+) -> np.ndarray:
+    """
+    Per-row utility using the piecewise linear functions from the official
+    PhysioNet 2019 evaluate_sepsis_score.py.
+
+    dt = t − t_sepsis  (negative = prediction before clinical onset)
+
+    Slope/intercept constants (matching the official code):
+      m1, b1 — ramp for early TP (dt_early..dt_optimal)
+      m2, b2 — decay for late TP (dt_optimal..dt_late)
+      m3, b3 — ramp for FN penalty (dt_optimal..dt_late)
+    """
+    m1 = max_u_tp  / (dt_optimal - dt_early)
+    b1 = -m1 * dt_early
+    m2 = -max_u_tp / (dt_late    - dt_optimal)
+    b2 = -m2 * dt_late
+    m3 = min_u_fn  / (dt_late    - dt_optimal)
+    b3 = -m3 * dt_optimal
+
+    u = np.zeros(len(dt), dtype=float)
+
+    for i in range(len(dt)):
+        if not is_septic_row[i]:
+            # Non-septic patient: t_sepsis = inf, window always open
+            u[i] = u_fp if y_pred[i] == 1 else u_tn
+            continue
+
+        # Septic patient: only score within [−∞, dt_late]
+        if dt[i] > dt_late:
+            continue  # beyond late window → 0
+
+        if y_pred[i] == 1:
+            # TP
+            if dt[i] <= dt_optimal:
+                u[i] = max(m1 * dt[i] + b1, u_fp)
+            else:  # dt_optimal < dt[i] <= dt_late
+                u[i] = m2 * dt[i] + b2
+        else:
+            # FN
+            if dt[i] <= dt_optimal:
+                u[i] = 0.0          # no penalty before first label
+            else:
+                u[i] = m3 * dt[i] + b3
+
+    return u
+
+
 def physionet_2019_utility(
     hours_until_sepsis: np.ndarray,
     y_pred_binary: np.ndarray,
-    normalize: bool = True,
-) -> np.ndarray:
+    patient_ids: Optional[np.ndarray] = None,
+    dt_early: int = -12,
+    dt_optimal: int = -6,
+    dt_late: int = 3,
+    max_u_tp: float = 1.0,
+    min_u_fn: float = -2.0,
+    u_fp: float = -0.05,
+    u_tn: float = 0.0,
+) -> float:
     """
-    Exact utility function from the PhysioNet 2019 Sepsis Challenge.
+    Normalised utility score from the PhysioNet/CinC 2019 Sepsis Challenge.
 
-    For each (patient, hour) row computes U(s,t):
-      - Sepsis patient (hours_until_sepsis is finite):
-        - Positive prediction: U_TP(t) = 1 - (t_sep - t) / (24*6)  if t < t_sep
-                              U_TP(t) = -2  if t >= t_sep (too late)
-        - Negative prediction: U_FN = -2
-      - Non-sepsis patient (hours_until_sepsis is NaN):
-        - Positive prediction: U_FP = -0.05
-        - Negative prediction: U_TN = 0
+    Faithfully implements the official evaluate_sepsis_score.py logic:
 
-    The challenge defines t_sep as the time of sepsis onset (as recorded in
-    SepsisLabel). In this pipeline, hours_until_sepsis = (t_sep - t) for rows
-    before onset, NaN for rows after or for non-septic patients.
+      t_sepsis  = row_of_first_SepsisLabel_1 − dt_optimal
+                = row_of_first_SepsisLabel_1 + 6  (clinical onset time)
+
+      dt = t − t_sepsis for each row.
+
+      TP utility (dt ≤ dt_late = +3):
+        dt ≤ dt_optimal (= −6): ramp max(m1·dt + b1, u_fp); 0 at dt=−12, 1 at dt=−6
+        dt_optimal < dt ≤ dt_late:  decay m2·dt + b2; 1 at dt=−6, 0 at dt=+3
+
+      FN utility:
+        dt ≤ dt_optimal: 0  (no penalty before first label)
+        dt_optimal < dt ≤ dt_late: ramp m3·dt + b3; 0 at dt=−6, −2 at dt=+3
+
+      FP: u_fp = −0.05 per row
+      TN: u_tn =  0.00 per row
+
+    NOTE: this pipeline only contains pre-onset rows (hours_until_sepsis ≥ 0),
+    so dt = −(hours_until_sepsis + 6) ≤ −6 = dt_optimal for all septic rows.
+    That means FN always has 0 penalty and TP ramps linearly:
+        u_TP = max((6 − h) / 6, −0.05)   where h = hours_until_sepsis
+    giving u=1 at h=0, u=0 at h=6, u=−0.05 for h>6.
+
+    Normalisation (per the official code):
+        score = (Σ observed_utility − Σ inaction_utility)
+              / (Σ best_utility     − Σ inaction_utility)
+
+    where inaction = always predict 0, best = optimal oracle predictor.
+    For our pre-onset-only data, inaction_utility = 0 per patient
+    (FN before label has zero penalty), so score = Σ obs / Σ best.
 
     Parameters
     ----------
-    hours_until_sepsis : array shape (n,); finite for pre-onset rows, NaN else
-    y_pred_binary      : binary predictions (n,); 0 or 1
-    normalize          : if True, divide by n to get average utility per row.
-                        If False, return sum of utilities.
+    hours_until_sepsis : (n,) float; h = t_sep_row − t for pre-onset rows, NaN else
+    y_pred_binary      : (n,) int; binary alarm predictions
+    patient_ids        : (n,) optional patient IDs for patient-level normalisation.
+                         If None, all rows treated as one patient (less accurate).
+    dt_early, dt_optimal, dt_late : challenge time parameters (default −12,−6,+3)
+    max_u_tp, min_u_fn, u_fp, u_tn : challenge utility weights
 
     Returns
     -------
-    np.ndarray of shape (n,) with per-row utility scores, or scalar average/sum.
+    float — normalised utility in roughly [0, 1]; negative if worse than inaction
     """
     hours_until_sepsis = np.asarray(hours_until_sepsis, dtype=float)
-    y_pred_binary = np.asarray(y_pred_binary, dtype=int)
+    y_pred_binary      = np.asarray(y_pred_binary,      dtype=int)
 
-    is_septic = np.isfinite(hours_until_sepsis)
-    is_nonseptic = ~is_septic
+    # In the official code, t_sepsis = argmax(labels) − dt_optimal
+    # = argmax(labels) + 6.  For a row at hour t:
+    #   dt = t − t_sepsis = −(hours_until_sepsis + |dt_optimal|) = −(h + 6)
+    # (because t = sepsis_row − h and t_sepsis = sepsis_row + 6)
+    dt_abs_opt = abs(dt_optimal)  # = 6
+    is_septic_row = np.isfinite(hours_until_sepsis)
+    h_safe = np.where(is_septic_row, hours_until_sepsis, 0.0)
+    dt = np.where(is_septic_row, -(h_safe + dt_abs_opt), np.inf)
 
-    utility = np.zeros(len(hours_until_sepsis), dtype=float)
+    # ── Group by patient, compute per-patient utilities ───────────────────────
+    if patient_ids is None:
+        # Treat all rows as a single patient block
+        pids = np.zeros(len(hours_until_sepsis), dtype=int)
+    else:
+        pids = np.asarray(patient_ids)
 
-    # Sepsis patients: positive predictions
-    # U_TP = 1 - (t_sep - t) / (24*6) = 1 - hours_until_sepsis / 144
-    septic_pos = is_septic & (y_pred_binary == 1)
-    utility[septic_pos] = 1.0 - (hours_until_sepsis[septic_pos] / 144.0)
+    unique_pids = np.unique(pids)
+    obs_total   = 0.0
+    best_total  = 0.0
+    inact_total = 0.0
 
-    # Sepsis patients: negative predictions → missed sepsis
-    septic_neg = is_septic & (y_pred_binary == 0)
-    utility[septic_neg] = -2.0
+    for pid in unique_pids:
+        mask = pids == pid
+        dt_p        = dt[mask]
+        y_p         = y_pred_binary[mask]
+        sep_p       = is_septic_row[mask]
+        h_p         = h_safe[mask]
 
-    # Non-sepsis patients: false alarms
-    nonseptic_pos = is_nonseptic & (y_pred_binary == 1)
-    utility[nonseptic_pos] = -0.05
+        # Observed utility
+        obs_u = _row_utility(dt_p, y_p, sep_p,
+                             dt_early, dt_optimal, dt_late,
+                             max_u_tp, min_u_fn, u_fp, u_tn)
+        obs_total += obs_u.sum()
 
-    # Non-sepsis patients: correct negatives
-    nonseptic_neg = is_nonseptic & (y_pred_binary == 0)
-    utility[nonseptic_neg] = 0.0
+        # Inaction utility (all zeros — FN before label = 0)
+        inact_u = _row_utility(dt_p, np.zeros_like(y_p), sep_p,
+                               dt_early, dt_optimal, dt_late,
+                               max_u_tp, min_u_fn, u_fp, u_tn)
+        inact_total += inact_u.sum()
 
-    if normalize:
-        return utility.mean()
-    return utility
+        # Best-case utility: predict 1 only when it helps (dt ∈ [dt_early, dt_late])
+        if sep_p.any():
+            best_pred = ((dt_p >= dt_early) & (dt_p <= dt_late)).astype(int)
+        else:
+            best_pred = np.zeros_like(y_p)  # no benefit for non-septic
+        best_u = _row_utility(dt_p, best_pred, sep_p,
+                              dt_early, dt_optimal, dt_late,
+                              max_u_tp, min_u_fn, u_fp, u_tn)
+        best_total += best_u.sum()
+
+    denom = best_total - inact_total
+    if denom == 0.0:
+        return 0.0
+    return float((obs_total - inact_total) / denom)
 
 
 # ── Detection timing helpers ──────────────────────────────────────────────────
@@ -290,8 +405,10 @@ def _group_detection_metrics(
     w_tn = getattr(getattr(cfg, "fairness", None), "utility_w_tn",  0.0) if cfg else 0.0
     clin = clinical_utility_score(y_true, y_bin, w_tp=w_tp, w_fp=w_fp, w_fn=w_fn, w_tn=w_tn)
 
-    # PhysioNet 2019 challenge utility (time-dependent reward for early detection)
-    physionet_utility = physionet_2019_utility(hours_until_sepsis, y_bin, normalize=True)
+    # PhysioNet 2019 challenge utility (official normalised score, patient-level)
+    physionet_utility = physionet_2019_utility(
+        hours_until_sepsis, y_bin, patient_ids=patient_ids
+    )
 
     return {
         # Patient counts
@@ -391,13 +508,54 @@ def compute_detection_fairness_report(
     report["ppv_gap"] = gap("precision")   # alias
 
     # Aggregate fairness metrics (mirrors static pipeline naming)
-    ppr_f = float((y_prob[f_mask] >= threshold).mean()) if f_mask.any() else np.nan
-    ppr_m = float((y_prob[m_mask] >= threshold).mean()) if m_mask.any() else np.nan
+    y_bin_all = (y_prob >= threshold).astype(int)
+    ppr_f = float((y_bin_all[f_mask]).mean()) if f_mask.any() else np.nan
+    ppr_m = float((y_bin_all[m_mask]).mean()) if m_mask.any() else np.nan
 
     report["demographic_parity_diff"]      = ppr_f - ppr_m
     report["equal_opportunity_diff"]       = abs(gap("tpr"))
     report["equalized_odds_diff"]          = max(abs(gap("tpr")), abs(gap("fpr")))
     report["sufficiency_diff"]             = abs(gap("precision"))
+
+    # ── Disparate impact (fairlearn / manual) ─────────────────────────────────
+    # Disparate Impact = PPR(female) / PPR(male).  Values near 1 = fair.
+    # The "80% rule" flags DI < 0.8 as discriminatory.
+    if ppr_m and not np.isnan(ppr_m) and ppr_m > 0:
+        report["disparate_impact"] = ppr_f / ppr_m
+    else:
+        report["disparate_impact"] = np.nan
+
+    # ── Equal Opportunity (fairlearn-aligned) ─────────────────────────────────
+    # Equal opportunity: signed TPR gap (female TPR − male TPR).
+    # Negative = females get fewer true positive alarms (disadvantaged).
+    report["equal_opportunity"]    = gap("tpr")          # signed
+    report["equal_opportunity_abs"]= abs(gap("tpr"))     # magnitude
+
+    # ── Equalized Odds (fairlearn-aligned) ────────────────────────────────────
+    # Equalized odds: max of |TPR gap| and |FPR gap|.
+    # Matches fairlearn's equalized_odds_difference (uses absolute differences).
+    report["equalized_odds"]       = max(abs(gap("tpr")), abs(gap("fpr")))
+
+    # Try fairlearn for an independent cross-check
+    try:
+        from fairlearn.metrics import (
+            demographic_parity_difference,
+            equalized_odds_difference,
+            true_positive_rate_difference,
+        )
+        sensitive_labels = sensitive.astype(int)
+        report["fl_demographic_parity_diff"]= demographic_parity_difference(
+            y_true, y_bin_all, sensitive_features=sensitive_labels
+        )
+        report["fl_equalized_odds_diff"]    = equalized_odds_difference(
+            y_true, y_bin_all, sensitive_features=sensitive_labels
+        )
+        report["fl_equal_opportunity_diff"] = true_positive_rate_difference(
+            y_true, y_bin_all, sensitive_features=sensitive_labels
+        )
+    except Exception:
+        # fairlearn not installed or failed — skip without crashing pipeline
+        pass
 
     # Early-detection–specific aggregate fairness
     report["early_detection_parity"]       = abs(gap("median_detection_lead_hours"))

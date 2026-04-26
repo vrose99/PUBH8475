@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Bias mitigation wrappers.
 
@@ -18,7 +20,6 @@ none              — no modification
 reweighting       — inverse-frequency sample weights per (group, label) cell
 smote             — SMOTE applied to balance the minority sensitive group
 fairness_penalty  — fairlearn ExponentiatedGradient with EqualizedOdds
-robust_model      — swap in a calibrated LR with balanced class weights
 """
 
 import logging
@@ -184,61 +185,33 @@ def apply_smote(X, y, sensitive, model, cfg: Config):
 
 @register("fairness_penalty")
 def apply_fairness_penalty(X, y, sensitive, model, cfg: Config):
-    """
-    Use fairlearn's ExponentiatedGradient with EqualizedOdds constraint.
-
-    This wraps the base model in a constrained optimisation loop that
-    explicitly penalises disparities in TPR and FPR across groups.
-    Returns a fitted fairlearn estimator directly; the evaluation loop
-    detects this and skips the standard fit() call.
-
-    Requires: fairlearn (`pip install fairlearn`)
-    """
     try:
-        from fairlearn.reductions import EqualizedOdds, ExponentiatedGradient
+        from fairlearn.reductions import GridSearch, EqualizedOdds
     except ImportError:
-        raise ImportError(
-            "fairlearn not installed — `pip install fairlearn`"
-        )
+        raise ImportError("fairlearn not installed — `pip install fairlearn`")
 
     from sklearn.base import clone
+    from sklearn.linear_model import LogisticRegression, LogisticRegressionCV
 
-    # Clone the passed model so ExponentiatedGradient gets a fresh, unfitted estimator.
-    # clone() copies hyperparameters without copying fitted state.
-    base = clone(model)
-    mitigator = ExponentiatedGradient(
+    if isinstance(model, LogisticRegressionCV):
+        base = LogisticRegression(
+            max_iter=model.max_iter,
+            solver=model.solver if model.solver != "warn" else "lbfgs",
+            random_state=getattr(model, "random_state", None),
+            class_weight=getattr(model, "class_weight", None),
+        )
+    else:
+        base = clone(model)
+    
+    # GridSearch: simpler, potentially faster
+    mitigator = GridSearch(
         estimator=base,
         constraints=EqualizedOdds(),
-        eps=0.01,
+        grid_size=10,  # ← controls search granularity
     )
-    mitigator.fit(X, y, sensitive_features=sensitive)
-    logger.debug("fairness_penalty: ExponentiatedGradient fitted.")
-    return X, y, sensitive, None, mitigator   # return fitted model
-
-
-@register("robust_model")
-def apply_robust_model(X, y, sensitive, model, cfg: Config):
-    """
-    Replace the base model with a calibrated logistic regression that has
-    balanced class weights — a conservative, interpretable choice that often
-    has better out-of-distribution behaviour than complex trees.
-
-    Useful as a "does a simpler model fix the problem?" baseline.
-    """
-    from sklearn.calibration import CalibratedClassifierCV
-    from sklearn.linear_model import LogisticRegression
-
-    robust = CalibratedClassifierCV(
-        LogisticRegression(
-            max_iter=2000,
-            solver="saga",
-            class_weight="balanced",
-            random_state=cfg.random_state,
-        ),
-        method="isotonic",
-        cv=3,
-    )
-    return X, y, sensitive, None, None   # swap happens in evaluation.py
+    mitigator.fit(X, y, sensitive_features=sensitive.astype(int))
+    logger.debug("fairness_penalty: GridSearch fitted.")
+    return X, y, sensitive, None, mitigator
 
 
 def get_mitigation(name: str) -> callable:

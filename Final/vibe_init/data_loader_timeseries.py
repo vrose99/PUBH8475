@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 Time-series data loader for early-detection fairness analysis.
 
@@ -143,10 +145,13 @@ def _process_patient(
     Rules
     -----
     * Positive patients (sepsis_hour exists):
-        - Include only hours 0 … sepsis_hour (exclusive) to ensure we only
-          evaluate *pre-onset* detection.
-        - target = 1 for hours where sepsis_hour − hour ≤ lookahead_hours
+        - All hours included (pre-onset and post-onset) to match the
+          official PhysioNet 2019 challenge evaluation setup.
         - hours_until_sepsis = sepsis_hour − current_hour
+          Positive = hours before first SepsisLabel=1.
+          Negative = hours after first SepsisLabel=1 (post-onset).
+        - target = 1 for hours where hours_until_sepsis ≤ lookahead_hours
+          (includes the lookahead window and all post-onset rows).
     * Negative patients (never septic):
         - All hours included.
         - target = 0, hours_until_sepsis = NaN.
@@ -160,11 +165,12 @@ def _process_patient(
     sepsis_rows = patient_df.index[patient_df[LABEL_COL_RAW] == 1].tolist()
     sepsis_hour = sepsis_rows[0] if sepsis_rows else None
 
-    # Restrict to pre-onset hours for septic patients
+    # Keep all hours for all patients (pre-onset and post-onset).
+    # Post-onset rows (hours_until_sepsis < 0) contribute FN penalties
+    # under the PhysioNet utility function when the model misses them,
+    # which matches the official challenge normalisation.
     if sepsis_hour is not None:
-        # Include the onset hour itself so the model sees the window leading
-        # directly up to diagnosis, but nothing after.
-        patient_df = patient_df.iloc[: sepsis_hour + 1].copy()
+        patient_df = patient_df.copy()
 
     # ── Feature engineering ────────────────────────────────────────────────
     feat_df = _rolling_features(patient_df, window_hours=window_hours)
@@ -231,12 +237,18 @@ def load_timeseries_dataset(
       - Meta cols: patient_id, hour, hours_until_sepsis, is_censored
       - Label: ``target``  (1 = sepsis imminent, 0 = not)
     """
-    cache_name = f"_ts_cache_la{lookahead_hours}_w{window_hours}.parquet"
+    # "_full" suffix = full timeline (pre + post-onset rows).
+    cache_name = f"_ts_cache_la{lookahead_hours}_w{window_hours}_full.csv.gz"
     cache_path = cfg.data_dir / cache_name
+    # Also handle old parquet caches gracefully
+    old_cache = cfg.data_dir / f"_ts_cache_la{lookahead_hours}_w{window_hours}.parquet"
 
     if cache and cache_path.exists():
         logger.info("Loading cached time-series dataset from %s", cache_path)
-        return pd.read_parquet(cache_path)
+        df = pd.read_csv(cache_path, compression="gzip")
+        if "Gender" in df.columns:
+            df["Gender"] = df["Gender"].astype(float).fillna(0).astype("int64")
+        return df
 
     psv_files = sorted(cfg.data_dir.rglob("*.psv"))
     if not psv_files:
@@ -287,14 +299,14 @@ def load_timeseries_dataset(
                 n_before - len(df), 100 * (n_before - len(df)) / n_before,
             )
 
-    # Ensure Gender is integer
+    # Ensure Gender is integer (use numpy int64, NOT pandas Int64/Arrow)
     if "Gender" in df.columns:
-        df["Gender"] = df["Gender"].astype(float).astype("Int64")
+        df["Gender"] = df["Gender"].astype(float).fillna(0).astype("int64")
 
     _log_dataset_summary(df, lookahead_hours)
 
     if cache:
-        df.to_parquet(cache_path, index=False)
+        df.to_csv(cache_path, index=False, compression="gzip")
         logger.info("Cached time-series dataset to %s", cache_path)
 
     return df
@@ -348,10 +360,10 @@ def patient_level_split(
     )
 
     train_pids, test_pids = train_test_split(
-        patient_labels["patient_id"].values,
+        patient_labels["patient_id"].to_numpy(),
         test_size=cfg.model.test_size,
         random_state=cfg.random_state,
-        stratify=patient_labels["ever_septic"].values,
+        stratify=patient_labels["ever_septic"].to_numpy(),
     )
 
     train_df = df[df["patient_id"].isin(train_pids)].copy().reset_index(drop=True)

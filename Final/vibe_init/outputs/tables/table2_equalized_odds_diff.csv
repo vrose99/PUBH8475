@@ -1,7 +1,10 @@
-model,mitigation,D0,D1A,D1B,D2A,D2B,D3A,D3B
-liu_glm,fairness_penalty,0.6667,0.0,0.0,1.0,0.6667,0.3333,1.0
-liu_glm,none,0.6667,1.0,0.0862,1.0,0.6667,0.3333,1.0
-liu_glm,reweighting,0.6667,1.0,1.0,1.0,0.6667,0.3333,1.0
-liu_glm,smote,0.3333,0.5,0.4828,0.6667,0.6667,0.3333,1.0
-liu_rnn,none,0.0769,0.069,0.0,0.0769,0.0769,0.0,0.0385
-liu_rnn,smote,0.0385,0.0,0.0,0.0385,0.0385,0.0385,0.0385
+model,mitigation,D0_ts
+liu_glm,none,0.6
+liu_glm,reweighting,0.6
+liu_glm,smote,0.6
+liu_rnn,none,0.8
+liu_rnn,reweighting,0.7333
+liu_rnn,smote,0.8
+liu_xgboost,none,0.0667
+liu_xgboost,reweighting,0.1667
+liu_xgboost,smote,0.0493

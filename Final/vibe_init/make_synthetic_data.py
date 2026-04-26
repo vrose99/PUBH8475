@@ -18,7 +18,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from data_loader import DEMO_COLS, LABEL_COL, LAB_COLS, VITAL_COLS
+from data_loader_timeseries import DEMO_COLS, LAB_COLS, VITAL_COLS
+LABEL_COL = "SepsisLabel"
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 logger = logging.getLogger(__name__)

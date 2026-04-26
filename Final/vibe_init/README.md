@@ -35,7 +35,7 @@ python make_synthetic_data.py --n-patients 1000 --out data/synthetic_sepsis
 python pipeline.py --data-dir data/synthetic_sepsis --max-patients 1000
 
 # Option B — real PhysioNet data
-# 1. Register and download from https://physionet.org/content/challenge-2019/1.0.0/
+# 1. Register and download from https://physionet.org/content/challenge-2019/1.0.0/ 
 # 2. Extract training_setA.zip (and optionally training_setB.zip)
 # 3. Run:
 python pipeline.py --data-dir path/to/training_setA
@@ -124,7 +124,6 @@ it will automatically appear in all reports.
 | `reweighting`     | Inverse-frequency sample weights per (group, label) |
 | `smote`           | Oversample minority sensitive group in training      |
 | `fairness_penalty`| fairlearn ExponentiatedGradient + EqualizedOdds     |
-| `robust_model`    | Swap to calibrated logistic regression              |
 
 ---
 

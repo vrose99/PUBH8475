@@ -1,11 +1,9 @@
 """
-Automated markdown report generator.
+Automated markdown report generator (time-series mode).
 
-Reads results and analysis summaries and writes a self-contained markdown
-narrative to outputs/report.md.  The report is structured like an academic
-methods / results section, referencing the figures and tables already on disk.
+Writes a self-contained markdown narrative to outputs/report.md.
 
-Entry point: generate_report(results, analysis_summary, cfg)
+Entry point: generate_report(results, cfg, analysis_summary=None)
 """
 
 import logging
@@ -20,8 +18,6 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _fmt(val, decimals: int = 3) -> str:
     if val is None or (isinstance(val, float) and not np.isfinite(val)):
@@ -39,41 +35,15 @@ def _tbl_link(name: str, rel_path: str) -> str:
 
 MITIGATION_DESCRIPTIONS = {
     "none":             "**Baseline** — no fairness intervention applied.",
-    "reweighting":      "**Reweighting** — inverse-frequency sample weights assigned to each "
-                        "(group × label) cell so that each subgroup contributes equally to the "
-                        "loss function during training.",
+    "reweighting":      "**Reweighting** — inverse-frequency sample weights per (group × label) "
+                        "cell so each subgroup contributes equally to the training loss.",
     "smote":            "**SMOTE** — Synthetic Minority Over-sampling applied to the "
-                        "underrepresented sensitive group to equalise group sizes before "
-                        "training.  Falls back to random oversampling when a class has fewer "
-                        "than 6 samples.",
+                        "underrepresented gender group to equalise sizes before training. "
+                        "Falls back to random oversampling when a class has fewer than 6 samples.",
     "fairness_penalty": "**Fairness Penalty (ExponentiatedGradient)** — fairlearn's "
-                        "constrained-optimisation wrapper that explicitly penalises "
-                        "violations of the equalized-odds constraint during training.",
-    "robust_model":     "**Robust Model** — the base classifier is replaced by a calibrated "
-                        "logistic regression with balanced class weights, testing whether a "
-                        "simpler, more regularised model is inherently fairer.",
+                        "constrained-optimisation wrapper that explicitly penalises violations "
+                        "of the equalized-odds constraint during training.",
 }
-
-DATASET_DESCRIPTIONS = {
-    "D0":  "**D0 — Original** — unmodified per-patient aggregates (mean, std, min, max, last "
-           "of all hourly measurements).",
-    "D1A": "**D1A — Row removal (females ↓)** — 80 % of female patients removed from the "
-           "training set, simulating systematic underrepresentation of women.",
-    "D1B": "**D1B — Row removal (males ↓)** — 80 % of male patients removed, symmetric "
-           "control experiment.",
-    "D2A": "**D2A — Missingness-at-random (females)** — 60 % of female rows have 5 clinical "
-           "features set to NaN, simulating differential data-collection quality.",
-    "D2B": "**D2B — Missingness-at-random (males)** — same, applied to male patients.",
-    "D3A": "**D3A — Gaussian noise (females)** — 2× std-level noise injected into 5 "
-           "features for female patients, simulating measurement or transcription error.",
-    "D3B": "**D3B — Gaussian noise (males)** — same, applied to male patients.",
-}
-
-
-# ── Section builders ──────────────────────────────────────────────────────────
-
-def _section_header(level: int, title: str) -> str:
-    return f"\n{'#' * level} {title}\n\n"
 
 
 def _section_methods(cfg: Config) -> str:
@@ -82,134 +52,101 @@ def _section_methods(cfg: Config) -> str:
         f"- {MITIGATION_DESCRIPTIONS.get(s, s)}"
         for s in cfg.mitigation.strategies
     )
-    datasets = "\n".join(
-        f"- {DATASET_DESCRIPTIONS.get(d, d)}"
-        for d in DATASET_DESCRIPTIONS
-    )
     return f"""\
 ## Methods
 
 ### Data
 We use the PhysioNet/CinC 2019 Sepsis Challenge dataset (Reyna et al., 2019).
-Each patient is represented by a single feature vector of per-variable aggregates
-(mean, standard deviation, minimum, maximum, and last observed value) computed
-over all ICU hours on record.  The sensitive attribute is **biological sex**
-(0 = female, 1 = male) as recorded in the challenge files.
+Each observation is one patient-hour. Features include raw clinical values plus
+rolling 6-hour statistics (mean, std, min, max, trend). The prediction target is
+a binary early-detection label: will sepsis onset occur within the next 6 hours?
 
-### Dataset variants
-To study how training-data perturbations propagate into fairness disparities,
-we construct seven dataset variants from the original cohort:
-
-{datasets}
+The sensitive attribute is **biological sex** (0 = female, 1 = male) as recorded
+in the challenge files.  Train/test splits are performed at the patient level to
+prevent temporal leakage.
 
 ### Models
-The following classifiers are evaluated: {models}.  All models are fitted with
-scikit-learn defaults except where noted; see `models.py` for full
-hyperparameters.
+The following classifiers are evaluated: {models}.
+See `models.py` for full hyperparameters.
 
 ### Mitigation strategies
 {mitigations}
 
+### Utility function
+The **PhysioNet 2019 challenge utility score** is the primary performance metric.
+It rewards early warnings (alarm triggered before onset) and penalises missed
+sepsis and alarm fatigue using a piecewise linear reward schedule aligned with
+clinical practice.  Normalised so that 1 = perfect early detection and
+0 = inaction (no alarms).
+
 ### Fairness metrics
-- **Demographic parity difference** — |P(ŷ=1|female) − P(ŷ=1|male)|
-- **Equalized odds difference** — max(|TPR gap|, |FPR gap|)
-- **Equal opportunity difference** — |TPR gap| (recall disparity)
-- **Sufficiency difference** — |PPV gap| (precision parity)
-- **Worst-group AUROC** — min(female AUROC, male AUROC), guards against the
-  *illusion of fairness* where a small gap coexists with near-random performance
-  on the worst-off group.
-- **Clinical utility score** — per-patient score based on the PhysioNet 2019
-  challenge reward function: +1.0 TP, −2.0 FN, −0.05 FP, 0.0 TN.
-"""
+Three gap metrics quantify disparity between female and male patients:
 
+1. **Detection lead gap (hours)** — difference in median detection lead times
+   (female − male). Positive = females warned earlier.
+2. **Missed-rate gap** — difference in the fraction of septic patients who
+   received no alarm at all.
+3. **Alarm fatigue rate gap** — difference in false-alarm rates for non-septic
+   patients.
 
-def _section_eda(cfg: Config) -> str:
-    fig_dir = "figures"
-    return f"""\
-## Exploratory Data Analysis
-
-Before modelling we characterise the cohort to understand baseline disparities.
-
-{_img("Group sizes across dataset variants", f"{fig_dir}/eda_group_sizes.png")}
-
-{_img("Sepsis prevalence by group", f"{fig_dir}/eda_prevalence.png")}
-
-{_img("Feature missingness by dataset variant and group", f"{fig_dir}/eda_missingness.png")}
-
-{_img("Feature distributions: Female vs. Male (original data)", f"{fig_dir}/eda_feature_distributions.png")}
-
-{_img("Feature distributions among sepsis-positive patients", f"{fig_dir}/eda_sepsis_feature_distributions.png")}
-
-A detailed cohort summary table is in
-{_tbl_link("tables/eda_cohort_summary.csv", "tables/eda_cohort_summary.csv")}.
+All three ideal values are 0 (equal treatment of both groups).
 """
 
 
 def _section_results(results: pd.DataFrame, cfg: Config) -> str:
     fig_dir = "figures"
-
-    # Top-line numbers
     baseline = results[results["mitigation"] == "none"]
-    d0_baseline = baseline[baseline["dataset_id"] == "D0"]
 
-    eo_mean = baseline["equalized_odds_diff"].mean() if "equalized_odds_diff" in baseline.columns else float("nan")
-    eo_d0   = d0_baseline["equalized_odds_diff"].mean() if len(d0_baseline) > 0 else float("nan")
-    worst_auroc_d0 = d0_baseline["worst_group_auroc"].mean() if "worst_group_auroc" in d0_baseline.columns and len(d0_baseline) > 0 else float("nan")
-
-    illusion_count = int(results.get("illusion_of_fairness", pd.Series(0)).sum()) if "illusion_of_fairness" in results.columns else 0
+    util_mean = baseline["overall_physionet_utility"].mean() if "overall_physionet_utility" in baseline.columns else float("nan")
+    lead_gap  = baseline["detection_lead_gap_hours"].mean()  if "detection_lead_gap_hours"  in baseline.columns else float("nan")
+    miss_gap  = baseline["missed_rate_gap"].mean()           if "missed_rate_gap"           in baseline.columns else float("nan")
+    fatigue_gap = baseline["alarm_fatigue_rate_gap"].mean()  if "alarm_fatigue_rate_gap"    in baseline.columns else float("nan")
 
     return f"""\
 ## Results
 
-### Baseline fairness on the original data (D0)
+### Phase A — Baseline (no mitigation)
 
-On the unperturbed dataset the mean equalized-odds difference across models is
-**{_fmt(eo_d0)}** and the worst-group AUROC is **{_fmt(worst_auroc_d0)}**.
-These numbers establish the *baseline disparity* present in the data before
-any deliberate perturbation.
+Without any fairness intervention the mean PhysioNet utility score across models
+is **{_fmt(util_mean)}**.  The three fairness gaps are:
 
-{_img("Fairness gap heatmap (equalized odds difference, no mitigation)", f"{fig_dir}/fig1_heatmap_equalized_odds_diff_none.png")}
+| Metric | Mean (female − male) |
+|--------|----------------------|
+| Detection lead gap (hours) | {_fmt(lead_gap)} |
+| Missed-rate gap | {_fmt(miss_gap)} |
+| Alarm fatigue rate gap | {_fmt(fatigue_gap)} |
 
-{_img("AUROC gap heatmap (no mitigation)", f"{fig_dir}/fig1_heatmap_auroc_gap_none.png")}
+{_img("PhysioNet utility score per model and mitigation", f"{fig_dir}/fig1_utility_score.png")}
 
-### Impact of training-data perturbations
+{_img("Detection lead hours per group (female vs. male)", f"{fig_dir}/fig2_detection_lead_hours.png")}
 
-Row removal (D1A/D1B) tends to produce the largest disparities: removing
-female patients inflates the equalized-odds gap because the model has far fewer
-examples of the female clinical presentation during training.
+### Phase B — After mitigation
 
-{_img("Full mitigation × model × dataset grid (equalized odds diff)", f"{fig_dir}/fig5_full_grid_equalized_odds_diff.png")}
+{_img("Three fairness gap metrics per model and mitigation", f"{fig_dir}/fig3_fairness_gap_metrics.png")}
 
-{_img("Full grid — AUROC gap", f"{fig_dir}/fig5_full_grid_auroc_gap.png")}
+{_img("Mitigation Δ vs. baseline heatmap", f"{fig_dir}/fig4_mitigation_delta.png")}
 
-### Illusion of fairness
-
-In {illusion_count} (dataset, model, mitigation) cells the equalized-odds
-difference is small (< 0.05) yet the worst-group AUROC is near chance (< 0.55),
-indicating that the model achieves apparent fairness by failing equally on both
-groups rather than succeeding equitably.  Details are in
-{_tbl_link("tables/analysis_illusion_of_fairness.csv", "tables/analysis_illusion_of_fairness.csv")}.
-
-{_img("Worst-group AUROC across dataset variants and mitigations", f"{fig_dir}/analysis_worst_group_auroc.png")}
+Full results table:
+{_tbl_link("tables/table1_summary.csv", "tables/table1_summary.csv")}.
 """
 
 
 def _section_mitigation(results: pd.DataFrame, analysis_summary: dict, cfg: Config) -> str:
     fig_dir = "figures"
-    best   = analysis_summary.get("best_mitigation",  "N/A")
-    best_g = _fmt(analysis_summary.get("best_eod_gap"))
-    base_g = _fmt(analysis_summary.get("baseline_eod_gap"))
+    best   = analysis_summary.get("best_mitigation", "N/A")
+    best_g = _fmt(analysis_summary.get("best_gap"))
+    base_g = _fmt(analysis_summary.get("baseline_gap"))
 
     ranking = analysis_summary.get("ranking", [])
     tbl_rows = []
     for r in ranking:
         mit   = r.get("mitigation", "")
         label = r.get("mitigation_label", mit)
-        eod   = _fmt(r.get("mean_equalized_odds_diff"))
-        auroc = _fmt(r.get("mean_overall_auroc"))
-        tbl_rows.append(f"| {label} | {eod} | {auroc} |")
+        gap   = _fmt(r.get(f"abs_detection_lead_gap_hours"))
+        util  = _fmt(r.get("overall_physionet_utility"))
+        tbl_rows.append(f"| {label} | {gap} | {util} |")
     tbl_str = (
-        "| Mitigation | Mean EO-diff | Mean AUROC |\n"
+        "| Mitigation | |Det. Lead Gap| (hrs) | Utility Score |\n"
         "|---|---|---|\n" +
         "\n".join(tbl_rows)
     ) if tbl_rows else ""
@@ -217,68 +154,17 @@ def _section_mitigation(results: pd.DataFrame, analysis_summary: dict, cfg: Conf
     return f"""\
 ## Mitigation Effectiveness
 
-Averaged across all dataset variants and models, the most effective mitigation
-strategy is **{best}**, reducing the equalized-odds difference from
-{base_g} (baseline) to {best_g}.
+Across all models the most effective strategy for reducing detection lead gap
+is **{best}** (gap = {best_g} vs. baseline {base_g}).
 
 {tbl_str}
 
-{_img("Mitigation delta heatmap (Δ equalized odds diff)", f"{fig_dir}/analysis_delta_heatmap_equalized_odds_diff.png")}
+{_img("Fairness–utility trade-off scatter", f"{fig_dir}/analysis_fairness_utility_tradeoff.png")}
 
-{_img("Fairness–performance trade-off scatter", f"{fig_dir}/analysis_tradeoff_equalized_odds_diff.png")}
+{_img("Metric Δ vs. baseline (all mitigations)", f"{fig_dir}/analysis_delta_bars.png")}
 
-### Clinical utility
-
-The clinical utility score translates abstract gap metrics into patient-care
-terms.  A negative score indicates that the net effect of the model on that
-patient subgroup is harmful (missed diagnoses outweigh correct detections).
-
-{_img("Clinical utility by group and mitigation", f"{fig_dir}/analysis_clinical_utility.png")}
-
-Full clinical utility table:
-{_tbl_link("tables/analysis_clinical_utility.csv", "tables/analysis_clinical_utility.csv")}.
-"""
-
-
-def _section_discussion() -> str:
-    return """\
-## Discussion
-
-### Key findings
-
-1. **Training-data composition is a primary driver of disparity.**
-   Removing 80 % of one group from training (D1A/D1B) consistently produces
-   the largest equalized-odds gaps.  Differential missingness (D2) has a
-   moderate effect; Gaussian noise (D3) has the smallest but still measurable
-   impact.
-
-2. **No single mitigation strategy dominates.**
-   Reweighting and the fairness penalty (ExponentiatedGradient) reliably reduce
-   the equalized-odds gap with minimal AUROC cost on the original dataset.
-   SMOTE is effective on row-removal variants but can amplify noise-related
-   disparities.  The robust model (calibrated LR) trades a small performance
-   reduction for more stable group-level calibration.
-
-3. **The illusion of fairness is a real risk.**
-   A small aggregate gap can coexist with near-random performance on the
-   worst-off group.  Reporting only equalized-odds difference without
-   worst-group AUROC is insufficient for clinical deployment decisions.
-
-4. **Clinical utility gaps persist after mitigation.**
-   Even the best-performing mitigation does not fully close the clinical utility
-   gap, underscoring that algorithmic interventions must be paired with upstream
-   data-quality improvements (e.g., standardising sensor coverage across
-   demographic groups).
-
-### Limitations
-
-- Gender is recorded as a binary variable in the PhysioNet data; non-binary
-  patients are not represented.
-- Results are aggregated across two hospitals (Beth Israel and Emory) with
-  different baseline prevalences; hospital-specific analyses may reveal
-  institution-level confounds.
-- Bootstrap confidence intervals are computed on test-set predictions only;
-  they do not capture variance from the training process.
+Mitigation ranking table:
+{_tbl_link("tables/analysis_mitigation_ranking.csv", "tables/analysis_mitigation_ranking.csv")}.
 """
 
 
@@ -286,35 +172,25 @@ def _section_reproducibility(cfg: Config) -> str:
     return f"""\
 ## Reproducibility
 
-All code is in `vibe_init/`.  To reproduce:
-
 ```bash
 cd /path/to/vibe_init
-python pipeline.py --data-dir /path/to/physionet_sepsis --seed 42
+python pipeline.py --data-dir /path/to/physionet_sepsis --seed {cfg.random_state}
 ```
-
-Key files:
 
 | File | Role |
 |------|------|
-| `config.py` | All hyper-parameters |
-| `data_loader.py` | PSV → patient aggregate |
-| `perturbations.py` | Dataset variants D0–D3 |
-| `evaluation.py` | Train / test / metrics loop |
-| `fairness.py` | Fairness metric computation |
+| `config.py` | All hyperparameters |
+| `data_loader_timeseries.py` | PSV → patient-hour dataset |
+| `evaluation_timeseries.py` | Train/test/metrics loop |
+| `fairness_timeseries.py` | Time-series fairness metrics |
 | `mitigation.py` | Bias mitigation strategies |
-| `eda.py` | Exploratory figures |
 | `analysis.py` | Post-hoc analysis |
 | `visualization.py` | Publication-quality figures |
 | `report.py` | This document |
 
-Random seed: `{cfg.random_state}`
-Test fraction: `{cfg.model.test_size}`
-Decision threshold: `{cfg.fairness.decision_threshold}`
+Random seed: `{cfg.random_state}` · Test fraction: `{cfg.model.test_size}` · Threshold: `{cfg.fairness.decision_threshold}`
 """
 
-
-# ── Entry point ───────────────────────────────────────────────────────────────
 
 def generate_report(
     results: pd.DataFrame,
@@ -322,40 +198,24 @@ def generate_report(
     analysis_summary: Optional[dict] = None,
     out_path: Optional[Path] = None,
 ) -> Path:
-    """
-    Generate a markdown report summarising EDA, results, and mitigation findings.
-
-    Parameters
-    ----------
-    results          : DataFrame from run_evaluation()
-    cfg              : project Config
-    analysis_summary : dict returned by analysis.run_analysis() (optional)
-    out_path         : override default output path
-
-    Returns the Path to the written file.
-    """
     if analysis_summary is None:
         analysis_summary = {}
 
     out_path = out_path or (cfg.output_dir / "report.md")
 
     sections = [
-        f"# Fairness in Sepsis Prediction: A Systematic Evaluation\n\n"
+        f"# Fairness in Sepsis Early Detection: Time-Series Analysis\n\n"
         f"*Generated {date.today().isoformat()} · PhysioNet/CinC 2019 · seed={cfg.random_state}*\n",
 
         "## Table of Contents\n\n"
         "1. [Methods](#methods)\n"
-        "2. [Exploratory Data Analysis](#exploratory-data-analysis)\n"
-        "3. [Results](#results)\n"
-        "4. [Mitigation Effectiveness](#mitigation-effectiveness)\n"
-        "5. [Discussion](#discussion)\n"
-        "6. [Reproducibility](#reproducibility)\n",
+        "2. [Results](#results)\n"
+        "3. [Mitigation Effectiveness](#mitigation-effectiveness)\n"
+        "4. [Reproducibility](#reproducibility)\n",
 
         _section_methods(cfg),
-        _section_eda(cfg),
         _section_results(results, cfg),
         _section_mitigation(results, analysis_summary, cfg),
-        _section_discussion(),
         _section_reproducibility(cfg),
 
         "\n---\n*Report auto-generated by `report.py`.*\n",
