@@ -382,21 +382,26 @@ def table_baseline_comparison(results: pd.DataFrame, cfg: Config) -> pd.DataFram
     df = df.dropna(subset=["dataset_id", "model"])
     df = df[df["mitigation"] == "none"]
 
-    df = df[
-        [
-            "model",
-            "dataset_id",
-            "overall_physionet_utility",
-            "disparate_impact",
-            "equal_opportunity",
-            "overall_physionet_utility_ci_lower",
-            "overall_physionet_utility_ci_upper",
-            "disparate_impact_ci_lower",
-            "disparate_impact_ci_upper",
-            "equal_opportunity_ci_lower",
-            "equal_opportunity_ci_upper",
-        ]
-    ].rename(
+    # Select base columns and CI columns if they exist
+    cols_to_select = [
+        "model",
+        "dataset_id",
+        "overall_physionet_utility",
+        "disparate_impact",
+        "equal_opportunity",
+    ]
+    # Add CI columns if they exist (bootstrap enabled)
+    ci_cols = [
+        "overall_physionet_utility_ci_lower",
+        "overall_physionet_utility_ci_upper",
+        "disparate_impact_ci_lower",
+        "disparate_impact_ci_upper",
+        "equal_opportunity_ci_lower",
+        "equal_opportunity_ci_upper",
+    ]
+    cols_to_select.extend([c for c in ci_cols if c in df.columns])
+
+    df = df[cols_to_select].rename(
         columns={
             "model": "Model",
             "dataset_id": "Dataset",
@@ -486,11 +491,17 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
     df["Mitigation"] = df["mitigation"].map(mitigation_map)
     df = df.dropna(subset=["Dataset", "Model", "Mitigation"])
 
-    # Select all metric columns including CI bounds
+    # Select base columns
+    keep_cols = ["Model", "Mitigation", "Dataset"]
     metric_cols = [
         "overall_physionet_utility",
         "disparate_impact",
         "equal_opportunity",
+    ]
+    keep_cols.extend([c for c in metric_cols if c in df.columns])
+
+    # Add CI columns if they exist (bootstrap enabled)
+    ci_cols = [
         "overall_physionet_utility_ci_lower",
         "overall_physionet_utility_ci_upper",
         "disparate_impact_ci_lower",
@@ -498,7 +509,7 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
         "equal_opportunity_ci_lower",
         "equal_opportunity_ci_upper",
     ]
-    keep_cols = ["Model", "Mitigation", "Dataset"] + [c for c in metric_cols if c in df.columns]
+    keep_cols.extend([c for c in ci_cols if c in df.columns])
 
     df = df[keep_cols].rename(
         columns={
