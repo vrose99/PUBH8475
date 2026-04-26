@@ -352,7 +352,7 @@ def render_all(results: pd.DataFrame, cfg: Config):
 # ── Critical Tables and Heatmaps ──────────────────────────────────────────────
 
 def _format_metric_with_ci(row: pd.Series, metric: str) -> str:
-    """Format metric value with CI if available."""
+    """Format metric value with 2.5-97.5 percentile CI if available."""
     val = row[metric]
     ci_lower_col = f"{metric}_ci_lower"
     ci_upper_col = f"{metric}_ci_upper"
@@ -360,8 +360,9 @@ def _format_metric_with_ci(row: pd.Series, metric: str) -> str:
     if ci_lower_col in row and ci_upper_col in row and pd.notna(row[ci_lower_col]):
         ci_lower = row[ci_lower_col]
         ci_upper = row[ci_upper_col]
-        return f"{val:.3f} [{ci_lower:.3f}, {ci_upper:.3f}]"
-    return f"{val:.3f}"
+        # Format: median (lower - upper)
+        return f"{val:.3g} ({ci_lower:.3g} - {ci_upper:.3g})"
+    return f"{val:.3g}"
 
 
 def table_baseline_comparison(results: pd.DataFrame, cfg: Config) -> pd.DataFrame:
@@ -591,24 +592,23 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
                     index="Dataset", columns="Mitigation", values=ci_upper_col, aggfunc="mean"
                 ).reindex(dataset_order, axis=0)[mitigation_order]
 
-                # Create text annotations with CIs
+                # Create text annotations with CIs: median (lower - upper)
                 text_annotations = []
                 for i, ds in enumerate(dataset_order):
-                    row_text = []
                     for j, mit in enumerate(mitigation_order):
                         val = pivot.iloc[i, j]
                         ci_l = pivot_ci_lower.iloc[i, j]
                         ci_u = pivot_ci_upper.iloc[i, j]
                         if pd.notna(val) and pd.notna(ci_l):
                             text_annotations.append(
-                                f"{val:.3f}<br>[{ci_l:.3f}, {ci_u:.3f}]"
+                                f"{val:.3g}<br>({ci_l:.3g} - {ci_u:.3g})"
                             )
                         else:
-                            text_annotations.append(f"{val:.3f}")
+                            text_annotations.append(f"{val:.3g}")
 
                 text_array = np.array(text_annotations).reshape(len(dataset_order), len(mitigation_order))
             else:
-                text_array = pivot.round(3).values
+                text_array = np.array([[f"{val:.3g}" for val in row] for row in pivot.values])
 
             fig_heat = px.imshow(
                 pivot.round(3),
@@ -623,7 +623,7 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
             fig_heat.update_traces(text=text_array, texttemplate="%{text}", textfont={"size": 10})
 
             fig_heat.update_layout(
-                title=f"{model_name} — {metric",
+                title=f"{model_name} — {metric} Heatmap",
                 xaxis_title="Mitigation",
                 yaxis_title="Dataset",
                 height=600,

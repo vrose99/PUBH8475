@@ -404,12 +404,13 @@ def apply_bootstrap_to_results(
 
         # Add baseline values and bootstrap CIs
         for col, baseline_val in baseline_metrics.items():
-            agg_row[col] = baseline_val
-
             if col in bootstrap_metrics and bootstrap_metrics[col]:
                 vals = np.array(bootstrap_metrics[col])
+                agg_row[col] = float(np.median(vals))  # Use median from bootstrap
                 agg_row[f"{col}_ci_lower"] = float(np.percentile(vals, 2.5))
                 agg_row[f"{col}_ci_upper"] = float(np.percentile(vals, 97.5))
+            else:
+                agg_row[col] = baseline_val
 
         bootstrap_results.append(agg_row)
 
