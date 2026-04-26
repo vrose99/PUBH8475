@@ -252,25 +252,40 @@ def _bootstrap_resample_patients(
     hours_until_sepsis: np.ndarray,
     patient_ids: np.ndarray,
     rng: np.random.Generator,
+    cfg: "Config" = None,
 ) -> tuple:
     """
     Resample test set by patient (with replacement) for bootstrap.
+    Stratified by gender: resample all unique female and male patients with replacement.
     Returns resampled arrays maintaining the same structure.
     """
-    unique_pids = np.unique(patient_ids)
-    resampled_pids = rng.choice(unique_pids, size=len(unique_pids), replace=True)
+    from config import Config
+    if cfg is None:
+        cfg = Config()
 
-    mask = np.isin(patient_ids, resampled_pids)
-    indices = np.where(mask)[0]
+    f_val = cfg.fairness.female_value
+    m_val = cfg.fairness.male_value
 
-    # Create mapping from original pids to indices
-    pid_to_idx = {pid: np.where(patient_ids == pid)[0] for pid in unique_pids}
+    # Split by gender
+    f_mask = sensitive == f_val
+    m_mask = sensitive == m_val
 
-    # Resample indices based on patient resampling
+    f_pids = np.unique(patient_ids[f_mask])
+    m_pids = np.unique(patient_ids[m_mask])
+
+    # Create mapping from pid to indices
+    pid_to_idx = {pid: np.where(patient_ids == pid)[0] for pid in np.unique(patient_ids)}
+
+    # Resample with replacement: all female and male patients
+    f_resampled_pids = rng.choice(f_pids, size=len(f_pids), replace=True)
+    m_resampled_pids = rng.choice(m_pids, size=len(m_pids), replace=True)
+
+    # Collect indices for resampled patients
     boot_indices = []
-    for pid in resampled_pids:
-        pid_indices = pid_to_idx[pid]
-        boot_indices.extend(pid_indices)
+    for pid in f_resampled_pids:
+        boot_indices.extend(pid_to_idx[pid])
+    for pid in m_resampled_pids:
+        boot_indices.extend(pid_to_idx[pid])
 
     boot_indices = np.array(boot_indices)
     return (
@@ -309,6 +324,12 @@ def apply_bootstrap_to_results(
     """
     Apply bootstrap resampling to test metrics.
     Trains model once, then bootstraps the test set predictions.
+
+    Bootstrap protocol:
+      For each iteration, resample all unique female patients with replacement
+      and all unique male patients with replacement from the test set.
+      This maintains gender balance and scales with max_patients.
+      Compute metrics on each bootstrap sample.
     """
     bootstrap_results = []
 
@@ -350,11 +371,11 @@ def apply_bootstrap_to_results(
             leave=False,
         ):
             try:
-                # Resample test set by patient
+                # Resample test set by patient (stratified by gender: all female + all male)
                 y_prob_boot, y_test_boot, s_test_boot, times_test_boot = (
                     _bootstrap_resample_patients(
                         y_prob, y_test, s_test, times_test,
-                        patient_ids_test, rng,
+                        patient_ids_test, rng, cfg=cfg,
                     )
                 )
 
