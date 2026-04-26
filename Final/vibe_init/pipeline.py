@@ -223,7 +223,6 @@ def main():
     baseline_cfg.model = cfg.model
     baseline_cfg.fairness = cfg.fairness
     baseline_cfg.mitigation.strategies = ["none"]
-    baseline_cfg.bootstrap = cfg.bootstrap
     baseline_cfg.run_analysis = cfg.run_analysis
     baseline_cfg.run_report = cfg.run_report
 
@@ -252,7 +251,7 @@ def main():
         mitigated_cfg.model = cfg.model
         mitigated_cfg.fairness = cfg.fairness
         mitigated_cfg.mitigation.strategies = mitigations
-        mitigated_cfg.bootstrap = cfg.bootstrap
+        mitigated_cfg.bootstrap = cfg.bootstrap  # Apply bootstrap to Phase B (mitigations)
         mitigated_cfg.run_analysis = cfg.run_analysis
         mitigated_cfg.run_report = cfg.run_report
 
