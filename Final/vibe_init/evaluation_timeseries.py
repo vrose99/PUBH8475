@@ -48,10 +48,12 @@ def evaluate_ts_single(
     """
     from feature_engineering import engineer_features
 
-    # Apply feature engineering before split
-    df_ts = engineer_features(df_ts)
-
+    # Split FIRST to prevent data leakage
     train_df, test_df = patient_level_split(df_ts, cfg, rng)
+
+    # Apply feature engineering separately to each split
+    train_df = engineer_features(train_df)
+    test_df = engineer_features(test_df)
 
     X_train, y_train, s_train, times_train, feat_names = split_Xy_sensitive(train_df, cfg)
     X_test,  y_test,  s_test,  times_test,  _          = split_Xy_sensitive(test_df,  cfg)
