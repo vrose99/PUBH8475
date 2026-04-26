@@ -1,71 +1,84 @@
+====================================
+07:37:10  INFO      pipeline — PHASE A — Baseline (no mitigation)
+07:37:10  INFO      pipeline — ====================================================================
+07:37:10  INFO      pipeline — 
+PhysioNet 2019 Utility Score  [ideal = 1.0]
+mitigation          none
+model                   
+ensemble_stack     0.075
+gradient_boosting -0.015
+liu_glm_cv        -0.120
+
+07:37:10  INFO      pipeline — 
+Disparate Impact  P(alarm|F)/P(alarm|M)  [ideal = 1.0]
+mitigation           none
+model                    
+ensemble_stack      1.089
+gradient_boosting  64.184
+liu_glm_cv          1.998
+
+07:37:10  INFO      pipeline — 
+Equal Opportunity  TPR(F)−TPR(M)  [ideal = 0]
+mitigation          none
+model                   
+ensemble_stack     0.053
+gradient_boosting -0.147
+liu_glm_cv         0.005
+
+07:37:10  INFO      pipeline — 
+Equalized Odds  max(|TPR gap|,|FPR gap|)  [ideal = 0]
+mitigation          none
+model                   
+ensemble_stack     0.243
+gradient_boosting  0.401
+liu_glm_cv         0.199
+
+/VENV311/lib/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
+
+Evaluating:   0%|                                                                                                                      | 0/9 [00:00<?, ?it/s]07:37:10  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
+07:37:28  INFO      evaluation_timeseries — Predictions [liu_glm_cv/reweighting]: 24.1% alarm @ utility-threshold=0.30, mean prob=0.218, max prob=1.000 | Female: 35.8% alarm | Male: 13.0% alarm
+Evaluating:  11%|████████████▏                                                                                                 | 1/9 [00:17<02:20, 17.57s/it]07:37:28  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
+07:37:45  INFO      evaluation_timeseries — Predictions [liu_glm_cv/smote]: 23.8% alarm @ utility-threshold=0.30, mean prob=0.210, max prob=1.000 | Female: 33.7% alarm | Male: 14.4% alarm
+Evaluating:  22%|████████████████████████▍                                                                                     | 2/9 [00:34<02:02, 17.46s/it]07:37:45  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
+07:37:57  INFO      evaluation_timeseries — Predictions [liu_glm_cv/fairness_penalty]: 25.0% alarm @ utility-threshold=0.30, mean prob=0.226, max prob=1.000 | Female: 35.8% alarm | Male: 14.7% alarm
+Evaluating:  33%|████████████████████████████████████▋                                                                         | 3/9 [00:47<01:30, 15.01s/it]07:37:57  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
+07:38:01  INFO      evaluation_timeseries — Predictions [gradient_boosting/reweighting]: 7.0% alarm @ utility-threshold=0.30, mean prob=0.056, max prob=0.951 | Female: 8.8% alarm | Male: 5.4% alarm
+Evaluating:  44%|████████████████████████████████████████████████▉                                                             | 4/9 [00:50<00:52, 10.48s/it]07:38:01  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
+07:38:05  INFO      evaluation_timeseries — Predictions [gradient_boosting/smote]: 15.1% alarm @ utility-threshold=0.30, mean prob=0.132, max prob=0.998 | Female: 30.5% alarm | Male: 0.3% alarm
+Evaluating:  56%|█████████████████████████████████████████████████████████████                                                 | 5/9 [00:54<00:33,  8.27s/it]07:38:05  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
+07:38:39  INFO      evaluation_timeseries — Predictions [gradient_boosting/fairness_penalty]: 15.6% alarm @ utility-threshold=0.30, mean prob=0.141, max prob=0.998 | Female: 31.6% alarm | Male: 0.3% alarm
+Evaluating:  67%|█████████████████████████████████████████████████████████████████████████▎                                    | 6/9 [01:29<00:51, 17.10s/it]07:38:39  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
+07:39:03  INFO      evaluation_timeseries — Predictions [ensemble_stack/reweighting]: 100.0% alarm @ utility-threshold=0.30, mean prob=0.413, max prob=0.829 | Female: 100.0% alarm | Male: 100.0% alarm
+Evaluating:  78%|█████████████████████████████████████████████████████████████████████████████████████▌                        | 7/9 [01:52<00:38, 19.14s/it]07:39:03  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
 VENV311/lib/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
   warnings.warn(
-
-03:36:17  INFO      utility_training — Threshold search: best=0.75 (utility=0.9945) | range=[0.2689, 0.9945]
-03:36:17  INFO      evaluation_timeseries — Predictions [ensemble_stack/fairness_penalty]: 9.8% alarm @ utility-threshold=0.75, mean prob=0.426, max prob=0.898 | Female: 19.6% alarm | Male: 0.3% alarm
-Evaluating: 100%|█████████████████████████████████████████████████████████████████████████████████████████████████████████████| 9/9 [21:49<00:00, 145.55s/it]
-03:36:17  INFO      evaluation_timeseries — Time-series evaluation: 3 models × 3 mitigations = 9 cells
-Evaluating:   0%|                                                                                                                      | 0/9 [00:00<?, ?it/s]03:36:18  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
-03:37:22  INFO      utility_training — Threshold search: best=0.65 (utility=0.9951) | range=[0.8925, 0.9951]
-03:37:22  INFO      evaluation_timeseries — Predictions [liu_glm_cv/reweighting]: 13.5% alarm @ utility-threshold=0.65, mean prob=0.158, max prob=1.000 | Female: 20.0% alarm | Male: 7.4% alarm
-Evaluating:  11%|████████████▏                                                                                                 | 1/9 [01:04<08:38, 64.86s/it]03:37:23  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
-03:38:37  INFO      utility_training — Threshold search: best=0.60 (utility=0.9939) | range=[0.8944, 0.9939]
-03:38:37  INFO      evaluation_timeseries — Predictions [liu_glm_cv/smote]: 14.7% alarm @ utility-threshold=0.60, mean prob=0.158, max prob=1.000 | Female: 21.1% alarm | Male: 8.7% alarm
-Evaluating:  22%|████████████████████████▍                                                                                     | 2/9 [02:19<08:13, 70.44s/it]03:38:38  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
-03:40:11  INFO      utility_training — Threshold search: best=0.65 (utility=0.9958) | range=[0.8968, 0.9958]
-03:40:11  INFO      evaluation_timeseries — Predictions [liu_glm_cv/fairness_penalty]: 13.9% alarm @ utility-threshold=0.65, mean prob=0.166, max prob=1.000 | Female: 19.6% alarm | Male: 8.4% alarm
-Evaluating:  33%|████████████████████████████████████▋                                                                         | 3/9 [03:53<08:08, 81.41s/it]03:40:12  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
-03:40:22  INFO      utility_training — Threshold search: best=0.20 (utility=1.0000) | range=[0.9877, 1.0000]
-03:40:22  INFO      evaluation_timeseries — Predictions [gradient_boosting/reweighting]: 0.9% alarm @ utility-threshold=0.20, mean prob=0.013, max prob=0.821 | Female: 0.0% alarm | Male: 1.7% alarm
-Evaluating:  44%|████████████████████████████████████████████████▉                                                             | 4/9 [04:05<04:28, 53.76s/it]03:40:23  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
-03:40:36  INFO      utility_training — Threshold search: best=0.05 (utility=1.0000) | range=[0.8547, 1.0000]
-03:40:36  INFO      evaluation_timeseries — Predictions [gradient_boosting/smote]: 11.6% alarm @ utility-threshold=0.05, mean prob=0.104, max prob=0.992 | Female: 21.4% alarm | Male: 2.3% alarm
-Evaluating:  56%|█████████████████████████████████████████████████████████████                                                 | 5/9 [04:18<02:37, 39.27s/it]03:40:37  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
-03:42:19  INFO      utility_training — Threshold search: best=0.05 (utility=1.0000) | range=[0.8360, 1.0000]
-03:42:19  INFO      evaluation_timeseries — Predictions [gradient_boosting/fairness_penalty]: 12.0% alarm @ utility-threshold=0.05, mean prob=0.101, max prob=0.991 | Female: 21.4% alarm | Male: 3.0% alarm
-Evaluating:  67%|█████████████████████████████████████████████████████████████████████████▎                                    | 6/9 [06:02<03:03, 61.07s/it]03:42:20  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
-/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
+07:39:31  INFO      evaluation_timeseries — Predictions [ensemble_stack/smote]: 12.8% alarm @ utility-threshold=0.30, mean prob=0.107, max prob=0.979 | Female: 24.9% alarm | Male: 1.3% alarm
+Evaluating:  89%|█████████████████████████████████████████████████████████████████████████████████████████████████▊            | 8/9 [02:21<00:22, 22.11s/it]07:39:31  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
+07:45:03  INFO      evaluation_timeseries — Predictions [liu_glm_cv/fairness_penalty]: 23.1% alarm @ utility-threshold=0.30, mean prob=0.209, max prob=1.000 | Female: 3.8% alarm | Male: 33.3% alarm
+Evaluating:  33%|████████████████████████████████████████████▎                                                                                        | 3/9 [00:45<01:27, 14.57s/it]07:45:03  INFO      data_loader_timeseries — Patient-level split: 54 train patients (1804 rows) / 14 test patients (614 rows)
+07:45:06  INFO      evaluation_timeseries — Predictions [gradient_boosting/reweighting]: 32.2% alarm @ utility-threshold=0.30, mean prob=0.261, max prob=0.988 | Female: 23.1% alarm | Male: 37.1% alarm
+Evaluating:  44%|███████████████████████████████████████████████████████████                                                                          | 4/9 [00:47<00:49,  9.88s/it]07:45:06  INFO      data_loader_timeseries — Patient-level split: 54 train patients (1804 rows) / 14 test patients (614 rows)
+07:45:10  INFO      evaluation_timeseries — Predictions [gradient_boosting/smote]: 31.8% alarm @ utility-threshold=0.30, mean prob=0.302, max prob=1.000 | Female: 22.6% alarm | Male: 36.6% alarm
+Evaluating:  56%|█████████████████████████████████████████████████████████████████████████▉                                                           | 5/9 [00:52<00:31,  7.85s/it]07:45:10  INFO      data_loader_timeseries — Patient-level split: 54 train patients (1804 rows) / 14 test patients (614 rows)
+07:45:36  INFO      evaluation_timeseries — Predictions [gradient_boosting/fairness_penalty]: 26.9% alarm @ utility-threshold=0.30, mean prob=0.233, max prob=0.996 | Female: 23.1% alarm | Male: 28.9% alarm
+Evaluating:  67%|████████████████████████████████████████████████████████████████████████████████████████▋                                            | 6/9 [01:17<00:41, 13.92s/it]07:45:36  INFO      data_loader_timeseries — Patient-level split: 54 train patients (1804 rows) / 14 test patients (614 rows)
+/lib/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
   warnings.warn(
-03:43:35  INFO      utility_training — Threshold search: best=0.70 (utility=0.9906) | range=[0.0000, 0.9906]
-03:43:35  INFO      evaluation_timeseries — Predictions [ensemble_stack/reweighting]: 5.3% alarm @ utility-threshold=0.70, mean prob=0.424, max prob=0.918 | Female: 8.8% alarm | Male: 2.0% alarm
-Evaluating:  78%|█████████████████████████████████████████████████████████████████████████████████████▌                        | 7/9 [07:17<02:11, 65.84s/it]03:43:36  INFO      data_loader_timeseries — Patient-level split: 68 train patients (2390 rows) / 18 test patients (584 rows)
-/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
+07:45:52  INFO      evaluation_timeseries — Predictions [ensemble_stack/reweighting]: 97.9% alarm @ utility-threshold=0.30, mean prob=0.513, max prob=0.913 | Female: 97.6% alarm | Male: 98.0% alarm
+Evaluating:  78%|███████████████████████████████████████████████████████████████████████████████████████████████████████▍                             | 7/9 [01:34<00:29, 14.68s/it]07:45:52  INFO      data_loader_timeseries — Patient-level split: 54 train patients (1804 rows) / 14 test patients (614 rows)
+
+/VENV311/lib/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
   warnings.warn(
-03:45:17  INFO      utility_training — Threshold search: best=0.85 (utility=1.0000) | range=[0.9764, 1.0000]
-03:45:17  INFO      evaluation_timeseries — Predictions [ensemble_stack/smote]: 1.4% alarm @ utility-threshold=0.85, mean prob=0.073, max prob=0.995 | Female: 1.8% alarm | Male: 1.0% alarm
-Evaluating:  89%|█████████████████████████████████████████████████████████████████████████████████████████████████▊            | 8/9 [09:00<01:17, 77.48s/it]
-
-=====================================
-03:58:32  INFO      pipeline — PHASE B — After mitigation
-03:58:32  INFO      pipeline — ====================================================================
-03:58:32  INFO      pipeline — 
-PhysioNet 2019 Utility Score  [ideal = 1.0]
-mitigation         fairness_penalty  reweighting  smote
-model                                                  
-ensemble_stack                0.002       -0.005  0.025
-gradient_boosting            -0.052        0.027 -0.048
-liu_glm_cv                   -0.034       -0.025 -0.021
-
-03:58:32  INFO      pipeline — 
-Disparate Impact  P(alarm|F)/P(alarm|M)  [ideal = 1.0]
-mitigation         fairness_penalty  reweighting  smote
-model                                                  
-ensemble_stack               25.271        4.542  1.197
-gradient_boosting             3.375        0.149  4.990
-liu_glm_cv                    1.818        2.095  2.293
-
-03:58:32  INFO      pipeline — 
-Equal Opportunity  TPR(F)−TPR(M)  [ideal = 0]
-mitigation         fairness_penalty  reweighting  smote
-model                                                  
-ensemble_stack               -0.106       -0.060 -0.115
-gradient_boosting            -0.069       -0.124 -0.074
-liu_glm_cv                   -0.120       -0.124 -0.129
-
-03:58:32  INFO      pipeline — 
-Equalized Odds  max(|TPR gap|,|FPR gap|)  [ideal = 0]
-mitigation         fairness_penalty  reweighting  smote
-model                                                  
-ensemble_stack                0.232        0.132  0.153
-gradient_boosting             0.213        0.135  0.237
-liu_glm_cv                    0.215        0.232  0.238
+/VENV311/lib/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
+  warnings.warn(
+/VENV311/lib/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
+  warnings.warn(
+/VENV311/lib/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
+  warnings.warn(
+/VENV311/lib/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
+  warnings.warn(
+/VENV311/lib/python3.11/site-packages/sklearn/utils/validation.py:2691: UserWarning: X does not have valid feature names, but LGBMClassifier was fitted with feature names
+  warnings.warn(
+/VENV311/lib/python3.11/site-packages/sklearn/linear_model/_sag.py:348: ConvergenceWarning: The max_iter was reached which means the coef_ did not converge
+  warnings.warn(
+/VENV311/lib/python3.11/site-packages/sklearn/linear_model/_sag.py:348: ConvergenceWarning: The max_iter was reached which means the coef_ did not converge
