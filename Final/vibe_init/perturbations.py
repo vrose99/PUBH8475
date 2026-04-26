@@ -140,10 +140,10 @@ def _dataset_row_removal(
     target_gender: int,
     sensitive_col: str,
     rng: np.random.Generator,
-    removal_fraction: float = 0.75,
+    removal_fraction: float = 0.5,
 ) -> pd.DataFrame:
     """
-    Remove 75% of rows for the target gender group.
+    Remove 50% of rows for the target gender group.
     Removes at the patient level to preserve time-series structure.
     """
     df = df_ts.copy()
