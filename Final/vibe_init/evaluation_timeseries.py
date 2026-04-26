@@ -44,8 +44,13 @@ def evaluate_ts_single(
 ) -> dict:
     """
     Train and evaluate one (model, mitigation) combination on the time-series
-    early-detection dataset.
+    early-detection dataset. Includes advanced feature engineering.
     """
+    from feature_engineering import engineer_features
+
+    # Apply feature engineering before split
+    df_ts = engineer_features(df_ts)
+
     train_df, test_df = patient_level_split(df_ts, cfg, rng)
 
     X_train, y_train, s_train, times_train, feat_names = split_Xy_sensitive(train_df, cfg)

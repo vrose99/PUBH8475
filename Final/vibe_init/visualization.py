@@ -89,13 +89,13 @@ def figure_1_utility_bars(results: pd.DataFrame, cfg: Config):
 
 def figure_2_detection_lead(results: pd.DataFrame, cfg: Config):
     """
-    Side-by-side bars: median detection lead hours for female vs. male,
-    one subplot per model.  Positive = early warning, negative = missed.
+    Side-by-side bars: PhysioNet utility for female vs. male,
+    one subplot per model.  Fairness-aligned metric focusing on actual reward.
     """
-    f_col = "female_median_detection_lead_hours"
-    m_col = "male_median_detection_lead_hours"
+    f_col = "female_physionet_utility"
+    m_col = "male_physionet_utility"
     if f_col not in results.columns or m_col not in results.columns:
-        logger.warning("Detection lead columns not found — skipping figure 2")
+        logger.warning("PhysioNet utility columns not found — skipping figure 2")
         return
 
     models = results["model"].unique()
@@ -113,7 +113,7 @@ def figure_2_detection_lead(results: pd.DataFrame, cfg: Config):
             id_vars=["Mitigation"],
             value_vars=[f_col, m_col],
             var_name="group",
-            value_name="lead_hours",
+            value_name="utility",
         )
         melted["group"] = melted["group"].map(
             {f_col: "Female", m_col: "Male"}
@@ -122,7 +122,7 @@ def figure_2_detection_lead(results: pd.DataFrame, cfg: Config):
         sns.barplot(
             data=melted,
             x="Mitigation",
-            y="lead_hours",
+            y="utility",
             hue="group",
             palette={"Female": _FEMALE_COLOR, "Male": _MALE_COLOR},
             ax=ax,
@@ -131,7 +131,7 @@ def figure_2_detection_lead(results: pd.DataFrame, cfg: Config):
         ax.axhline(0, color="black", linewidth=0.8, linestyle="--")
         ax.set_title(model.replace("_", " ").title())
         ax.set_xlabel("Mitigation")
-        ax.set_ylabel("Median detection lead (hours)" if ax is axes[0] else "")
+        ax.set_ylabel("PhysioNet utility" if ax is axes[0] else "")
         ax.tick_params(axis="x", rotation=20)
         if ax is not axes[-1]:
             ax.get_legend().remove()
@@ -280,10 +280,11 @@ def table_1_summary(results: pd.DataFrame, cfg: Config) -> pd.DataFrame:
         "dataset_id", "model", "mitigation",
         "overall_physionet_utility",
         "female_physionet_utility", "male_physionet_utility",
-        "detection_lead_gap_hours", "missed_rate_gap", "alarm_fatigue_rate_gap",
-        "disparate_impact", "equal_opportunity", "equalized_odds",
-        "female_median_detection_lead_hours", "male_median_detection_lead_hours",
-        "female_pct_detected_before_onset", "male_pct_detected_before_onset",
+        "physionet_utility_gap",
+        "pct_detected_at_all_gap", "pct_in_optimal_window_gap",
+        "missed_rate_gap", "alarm_fatigue_rate_gap",
+        "disparate_impact", "equal_opportunity_diff", "equalized_odds_diff",
+        "demographic_parity_diff", "sufficiency_diff",
     ]
     keep = [c for c in priority_cols if c in results.columns]
     remaining = [c for c in results.columns if c not in keep]

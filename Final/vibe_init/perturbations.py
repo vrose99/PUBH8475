@@ -14,6 +14,7 @@ the effect of single perturbation types while holding the base cohort constant.
 """
 
 import logging
+from typing import Dict
 
 import numpy as np
 import pandas as pd
@@ -48,7 +49,7 @@ def build_all_datasets(
     df_ts: pd.DataFrame,
     cfg: Config,
     rng: np.random.Generator,
-) -> dict[str, pd.DataFrame]:
+) -> Dict[str, pd.DataFrame]:
     """
     Build all perturbation variants (D0–D3B) from a time-series dataset.
     Returns {dataset_id: df_ts_variant}.
@@ -104,7 +105,11 @@ def _dataset_parent_parity(
 ) -> pd.DataFrame:
     """
     Subsample the larger gender group to match the smaller one, ensuring
-    balanced representation. This is the parent dataset for all D1–D3 variants.
+    balanced representation. Preserves all sepsis cases within each group.
+
+    For each gender, separates into sepsis (target=1) and non-sepsis (target=0)
+    patients, preserves all sepsis patients, and randomly subsamples non-sepsis
+    patients to reach the target count.
     """
     df = df_ts.copy()
     sensitive_col = cfg.fairness.sensitive_column
@@ -121,13 +126,36 @@ def _dataset_parent_parity(
     target_n = min(n_f, n_m)
     logger.info(f"D0: equalizing gender balance — target {target_n} patients per group")
 
+    # Process female patients
     if n_f > target_n:
         f_pids = df[f_mask]["patient_id"].unique()
-        keep_f_pids = rng.choice(f_pids, size=target_n, replace=False)
+        f_sepsis_pids = set(df[f_mask & (df["target"] == 1)]["patient_id"].unique())
+        f_non_sepsis_pids = np.array([pid for pid in f_pids if pid not in f_sepsis_pids])
+
+        # Keep all sepsis patients, then sample non-sepsis to reach target
+        n_to_sample = max(0, target_n - len(f_sepsis_pids))
+        if len(f_non_sepsis_pids) > 0 and n_to_sample > 0:
+            f_sampled_non_sepsis = rng.choice(f_non_sepsis_pids, size=min(n_to_sample, len(f_non_sepsis_pids)), replace=False)
+            keep_f_pids = list(f_sepsis_pids) + list(f_sampled_non_sepsis)
+        else:
+            keep_f_pids = list(f_sepsis_pids)
+
         df = df[~(f_mask & ~df["patient_id"].isin(keep_f_pids))]
-    elif n_m > target_n:
+
+    # Process male patients
+    if n_m > target_n:
         m_pids = df[m_mask]["patient_id"].unique()
-        keep_m_pids = rng.choice(m_pids, size=target_n, replace=False)
+        m_sepsis_pids = set(df[m_mask & (df["target"] == 1)]["patient_id"].unique())
+        m_non_sepsis_pids = np.array([pid for pid in m_pids if pid not in m_sepsis_pids])
+
+        # Keep all sepsis patients, then sample non-sepsis to reach target
+        n_to_sample = max(0, target_n - len(m_sepsis_pids))
+        if len(m_non_sepsis_pids) > 0 and n_to_sample > 0:
+            m_sampled_non_sepsis = rng.choice(m_non_sepsis_pids, size=min(n_to_sample, len(m_non_sepsis_pids)), replace=False)
+            keep_m_pids = list(m_sepsis_pids) + list(m_sampled_non_sepsis)
+        else:
+            keep_m_pids = list(m_sepsis_pids)
+
         df = df[~(m_mask & ~df["patient_id"].isin(keep_m_pids))]
 
     return df.reset_index(drop=True)
@@ -145,13 +173,24 @@ def _dataset_row_removal(
     """
     Remove 50% of rows for the target gender group.
     Removes at the patient level to preserve time-series structure.
+
+    Preserves all sepsis cases (target=1) to avoid loss of rare positives.
+    Removal is drawn only from non-sepsis cases (target=0).
     """
     df = df_ts.copy()
     target_mask = df[sensitive_col] == target_gender
     target_pids = df[target_mask]["patient_id"].unique()
 
-    n_remove = max(1, int(len(target_pids) * removal_fraction))
-    remove_pids = rng.choice(target_pids, size=n_remove, replace=False)
+    # Separate sepsis (target=1) and non-sepsis (target=0) patients
+    sepsis_pids = set(df[target_mask & (df["target"] == 1)]["patient_id"].unique())
+    non_sepsis_pids = np.array([pid for pid in target_pids if pid not in sepsis_pids])
+
+    # Only remove from non-sepsis patients
+    n_remove = max(1, int(len(non_sepsis_pids) * removal_fraction))
+    if len(non_sepsis_pids) > 0:
+        remove_pids = rng.choice(non_sepsis_pids, size=min(n_remove, len(non_sepsis_pids)), replace=False)
+    else:
+        remove_pids = []
 
     df = df[~df["patient_id"].isin(remove_pids)]
     return df.reset_index(drop=True)

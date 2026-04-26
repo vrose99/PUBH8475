@@ -410,6 +410,11 @@ def _group_detection_metrics(
         hours_until_sepsis, y_bin, patient_ids=patient_ids
     )
 
+    # Detection in optimal window (PhysioNet utility window: -6 to +3 hours)
+    # Only counts detected patients whose lead time falls within [-6, +3] hours
+    optimal_window_leads = valid_leads[(valid_leads >= -6) & (valid_leads <= 3)]
+    pct_in_optimal_window = (len(optimal_window_leads) / n_detected * 100) if n_detected > 0 else np.nan
+
     return {
         # Patient counts
         "n":                            len(y_true),
@@ -425,14 +430,12 @@ def _group_detection_metrics(
         "brier":                        float(brier),
         "ece":                          float(ece),
         "clinical_utility":             float(clin),
-        # PhysioNet 2019 challenge utility (rewards early detection)
+        # PhysioNet 2019 challenge utility (official score, patient-level)
         "physionet_utility":            float(physionet_utility),
-        # Early-detection specific
-        "median_detection_lead_hours":  float(np.median(valid_leads)) if len(valid_leads) > 0 else np.nan,
-        "mean_detection_lead_hours":    float(np.mean(valid_leads))   if len(valid_leads) > 0 else np.nan,
-        "pct_detected_before_onset":    float((valid_leads > 0).mean() * 100) if len(valid_leads) > 0 else np.nan,
+        # Detection fairness metrics
         "pct_detected_at_all":          float(n_detected / n_septic_pids * 100) if n_septic_pids > 0 else np.nan,
         "pct_missed":                   float(missed_rate * 100),
+        "pct_in_optimal_window":        float(pct_in_optimal_window),
         "alarm_fatigue_rate":           float(alarm_fatigue_rate),
     }
 
@@ -500,9 +503,8 @@ def compute_detection_fairness_report(
 
     # Gap metrics (female − male; positive = females better off)
     for m in ["tpr", "fpr", "auroc", "precision", "f1", "brier", "ece",
-              "clinical_utility", "physionet_utility", "median_detection_lead_hours",
-              "mean_detection_lead_hours", "pct_detected_before_onset",
-              "pct_missed", "alarm_fatigue_rate"]:
+              "clinical_utility", "physionet_utility", "pct_detected_at_all",
+              "pct_missed", "pct_in_optimal_window", "alarm_fatigue_rate"]:
         report[f"{m}_gap"] = gap(m)
 
     report["ppv_gap"] = gap("precision")   # alias
@@ -557,9 +559,9 @@ def compute_detection_fairness_report(
         # fairlearn not installed or failed — skip without crashing pipeline
         pass
 
-    # Early-detection–specific aggregate fairness
-    report["early_detection_parity"]       = abs(gap("median_detection_lead_hours"))
-    report["missed_rate_gap"]              = gap("pct_missed")    # positive = females missed less
+    # Detection fairness metrics aligned with PhysioNet utility
+    report["missed_rate_gap"]              = gap("pct_missed")
+    report["optimal_window_gap"]           = gap("pct_in_optimal_window")
     report["alarm_fatigue_gap"]            = gap("alarm_fatigue_rate")
 
     # Illusion-of-fairness guard
@@ -580,24 +582,28 @@ def detection_summary_table(
     results: "pd.DataFrame",
 ) -> "pd.DataFrame":
     """
-    Pivot results to a human-readable summary focused on detection timing.
+    Pivot results to a human-readable summary focused on utility and fairness.
 
     Rows: (dataset_id, model, mitigation)
-    Columns: key early-detection fairness metrics
+    Columns: PhysioNet utility and fairness metrics
     """
     import pandas as pd
 
     cols_of_interest = [
         "dataset_id", "model", "mitigation",
-        "female_median_detection_lead_hours",
-        "male_median_detection_lead_hours",
-        "median_detection_lead_hours_gap",
-        "female_pct_detected_before_onset",
-        "male_pct_detected_before_onset",
-        "female_pct_missed",
-        "male_pct_missed",
+        "overall_physionet_utility",
+        "female_physionet_utility",
+        "male_physionet_utility",
+        "physionet_utility_gap",
+        "female_pct_detected_at_all",
+        "male_pct_detected_at_all",
+        "pct_detected_at_all_gap",
+        "female_pct_in_optimal_window",
+        "male_pct_in_optimal_window",
+        "pct_in_optimal_window_gap",
+        "equal_opportunity_diff",
         "equalized_odds_diff",
-        "early_detection_parity",
+        "disparate_impact",
     ]
     keep = [c for c in cols_of_interest if c in results.columns]
     return results[keep].round(3)

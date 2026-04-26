@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 """
-Model registry.
+Model registry with improved models for sepsis detection.
 
 Add new models by inserting an entry into MODEL_REGISTRY.
 Each value is a callable (no args) that returns a fresh sklearn-compatible
@@ -17,6 +17,7 @@ Liu et al. (2019, Sci Rep) models are prefixed "liu_":
 
 import sys
 from pathlib import Path
+from typing import Dict, Callable
 
 import numpy as np
 from sklearn.calibration import CalibratedClassifierCV
@@ -233,7 +234,58 @@ def _liu_rnn():
     return _GRUStaticWrapper()
 
 
-MODEL_REGISTRY: dict[str, callable] = {
+def _ensemble_stack():
+    """
+    5-model stacking ensemble for improved sepsis detection.
+
+    Base learners: LogReg, LightGBM, XGBoost, RandomForest, GradientBoosting
+    Meta-learner: Logistic regression (learns optimal blend)
+
+    This ensemble leverages model diversity to catch more sepsis cases
+    while maintaining fairness across groups.
+    """
+    try:
+        from sklearn.ensemble import StackingClassifier
+    except ImportError:
+        raise ImportError("sklearn >= 0.24 required for StackingClassifier")
+
+    base_learners = [
+        ("logistic", LogisticRegression(
+            C=0.01, l1_ratio=1, solver="saga",
+            class_weight="balanced", max_iter=4000, random_state=42
+        )),
+        ("lightgbm", LGBMClassifier(
+            n_estimators=200, max_depth=4, learning_rate=0.05,
+            class_weight="balanced", random_state=42, verbose=-1
+        ) if _LGB_AVAILABLE else LogisticRegression(class_weight="balanced", random_state=42)),
+        ("xgboost", XGBClassifier(
+            n_estimators=200, max_depth=4, learning_rate=0.05,
+            subsample=0.8, colsample_bytree=0.8, scale_pos_weight=11,
+            eval_metric="logloss", random_state=42, n_jobs=1
+        ) if _XGB_AVAILABLE else LogisticRegression(class_weight="balanced", random_state=42)),
+        ("rf", RandomForestClassifier(
+            n_estimators=200, max_depth=8, class_weight="balanced",
+            n_jobs=1, random_state=42
+        )),
+        ("gb", GradientBoostingClassifier(
+            n_estimators=200, max_depth=4, learning_rate=0.05, random_state=42
+        )),
+    ]
+
+    meta_learner = LogisticRegression(
+        C=1.0, solver="lbfgs", class_weight="balanced",
+        max_iter=4000, random_state=42
+    )
+
+    return StackingClassifier(
+        estimators=base_learners,
+        final_estimator=meta_learner,
+        cv=5,
+        n_jobs=1,
+    )
+
+
+MODEL_REGISTRY: Dict[str, Callable] = {
     "logistic_regression": _logistic_regression,
     "random_forest":       _random_forest,
     "gradient_boosting":   _gradient_boosting,
@@ -245,6 +297,8 @@ MODEL_REGISTRY: dict[str, callable] = {
     "liu_glm_cv":          _liu_glm_cv,   # full: 3×3 CV grid, ~2 min per fit
     "liu_xgboost":         _liu_xgboost,
     "liu_rnn":             _liu_rnn,
+    # Improved models
+    "ensemble_stack":      _ensemble_stack,  # 5-model stacking ensemble
 }
 
 
