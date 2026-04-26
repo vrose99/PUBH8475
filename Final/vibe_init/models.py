@@ -142,18 +142,21 @@ def _liu_glm():
 
 def _liu_glm_cv():
     """
-    Full paper-spec GLM: L1 logistic regression with 3-fold CV over C.
-    Use this for final/production runs where a few extra minutes is acceptable.
-    Total fits: 3 C values × 3 folds = 9  (vs 50 in the paper).
+    Full paper-spec GLM: L1 logistic regression with 5-fold CV over a wider C grid.
+
+    Wider C search (1e-4 to 10) avoids getting stuck at a single regularisation
+    level that may under- or over-regularise depending on the data split.
+    5-fold CV is more stable than 3-fold on small cohorts.
+    Total fits: 6 C values × 5 folds = 30.
     """
     return LogisticRegressionCV(
-        Cs=3,
-        cv=3,
-        l1_ratios=[1],     # pure L1/LASSO (replaces penalty='l1')
-        solver="saga",     # saga supports l1_ratio
+        Cs=np.logspace(-4, 1, 6),  # 1e-4 … 10, six values on log scale
+        cv=5,
+        l1_ratios=[1],             # pure L1/LASSO
+        solver="saga",
         scoring="roc_auc",
         class_weight="balanced",
-        max_iter=4000,
+        max_iter=5000,
         n_jobs=1,
         random_state=42,
     )
@@ -163,10 +166,15 @@ def _liu_xgboost():
     """
     XGBoost configured for imbalanced EHR classification.
 
-    scale_pos_weight is set to the expected class ratio for PhysioNet 2019
-    (~11:1 negative:positive).  Liu et al. use max_depth=4 with shrinkage
-    learning_rate=0.05 and row/column subsampling to reduce overfitting on
-    the sparse lab-value features.
+    scale_pos_weight is intentionally left at 1 (neutral) so the evaluation
+    loop controls class-imbalance correction through sample_weight (reweighting
+    mitigation) rather than a hardcoded global ratio. The previous value of 11
+    was calibrated to the full PhysioNet 2019 prevalence and silently broke on
+    subsets with different class ratios.
+
+    Additional L1/L2 regularisation (reg_alpha, reg_lambda) and column-level
+    subsampling (colsample_bylevel) reduce overfitting on high-dimensional,
+    sparse EHR features.
     """
     if not _XGB_AVAILABLE:
         raise RuntimeError(
@@ -178,9 +186,12 @@ def _liu_xgboost():
         learning_rate=0.05,
         subsample=0.8,
         colsample_bytree=0.8,
+        colsample_bylevel=0.8,
+        reg_alpha=1.0,
+        reg_lambda=1.0,
         objective="binary:logistic",
         eval_metric="auc",
-        scale_pos_weight=11,   # approx neg/pos ratio in PhysioNet 2019
+        scale_pos_weight=1,    # set per-split via sample_weight in mitigation
         random_state=42,
         n_jobs=1,
     )
@@ -203,12 +214,12 @@ class _GRUStaticWrapper:
             raise ImportError("torch is required for liu_rnn. Install PyTorch or use liu_glm.")
         self._gru = _LiuLikeGRU(
             random_state=42,
-            hidden_size=64,
-            num_layers=1,
-            dropout=0.1,
-            epochs=12,
-            batch_size=128,
-            learning_rate=1e-3,
+            hidden_size=128,   # doubled from 64 — more capacity for 215 engineered features
+            num_layers=2,      # stacked GRU layers for deeper temporal abstraction
+            dropout=0.2,       # increased from 0.1 to regularise the deeper network
+            epochs=20,         # more passes over the (small) training set
+            batch_size=64,     # smaller batches → more gradient updates per epoch
+            learning_rate=5e-4,  # reduced from 1e-3 for more stable convergence
         )
 
     def fit(self, X, y, **kwargs):

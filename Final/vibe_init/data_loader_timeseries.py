@@ -214,8 +214,7 @@ def load_timeseries_dataset(
     window_hours: int = 6,
     max_patients: Optional[int] = None,
     cache: bool = True,
-    drop_blank_hours: bool = True,
-    psv_files: Optional[list[Path]] = None
+    drop_blank_hours: bool = True
 ) -> pd.DataFrame:
     """
     Load all PSV files and produce a patient-hour supervised dataset.
@@ -251,8 +250,7 @@ def load_timeseries_dataset(
             df["Gender"] = df["Gender"].astype(float).fillna(0).astype("int64")
         return df
 
-    if psv_files is None:
-        psv_files = sorted(cfg.data_dir.rglob("*.psv"))
+    psv_files = sorted(cfg.data_dir.rglob("*.psv"))
     if not psv_files:
         raise FileNotFoundError(
             f"No PSV files found under {cfg.data_dir}.\n"

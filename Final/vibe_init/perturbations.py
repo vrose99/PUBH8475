@@ -104,12 +104,18 @@ def _dataset_parent_parity(
     rng: np.random.Generator,
 ) -> pd.DataFrame:
     """
-    Subsample the larger gender group to match the smaller one, ensuring
-    balanced representation. Preserves all sepsis cases within each group.
+    Create balanced gender cohort while preserving ALL sepsis cases.
 
-    For each gender, separates into sepsis (target=1) and non-sepsis (target=0)
-    patients, preserves all sepsis patients, and randomly subsamples non-sepsis
-    patients to reach the target count.
+    Strategy:
+      1. Identify all sepsis patients in each gender group (keep all)
+      2. Calculate how many non-sepsis patients we can keep per gender
+      3. Use the minimum as the balanced target
+      4. Randomly subsample non-sepsis patients from the majority group(s)
+
+    This ensures:
+      - Zero sepsis cases are removed
+      - Male/female counts are equal
+      - Non-sepsis subsampling is unbiased (random)
     """
     df = df_ts.copy()
     sensitive_col = cfg.fairness.sensitive_column
@@ -119,45 +125,44 @@ def _dataset_parent_parity(
     f_mask = df[sensitive_col] == f_val
     m_mask = df[sensitive_col] == m_val
 
-    n_f = df[f_mask]["patient_id"].nunique()
-    n_m = df[m_mask]["patient_id"].nunique()
+    f_pids = df[f_mask]["patient_id"].unique()
+    m_pids = df[m_mask]["patient_id"].unique()
 
-    # Subsample the larger group to match the smaller
-    target_n = min(n_f, n_m)
-    logger.info(f"D0: equalizing gender balance — target {target_n} patients per group")
+    # All sepsis patients (will be preserved)
+    f_sepsis_pids = set(df[f_mask & (df["target"] == 1)]["patient_id"].unique())
+    m_sepsis_pids = set(df[m_mask & (df["target"] == 1)]["patient_id"].unique())
 
-    # Process female patients
-    if n_f > target_n:
-        f_pids = df[f_mask]["patient_id"].unique()
-        f_sepsis_pids = set(df[f_mask & (df["target"] == 1)]["patient_id"].unique())
-        f_non_sepsis_pids = np.array([pid for pid in f_pids if pid not in f_sepsis_pids])
+    # All non-sepsis patients (available for subsampling)
+    f_non_sepsis_pids = np.array([pid for pid in f_pids if pid not in f_sepsis_pids])
+    m_non_sepsis_pids = np.array([pid for pid in m_pids if pid not in m_sepsis_pids])
 
-        # Keep all sepsis patients, then sample non-sepsis to reach target
-        n_to_sample = max(0, target_n - len(f_sepsis_pids))
-        if len(f_non_sepsis_pids) > 0 and n_to_sample > 0:
-            f_sampled_non_sepsis = rng.choice(f_non_sepsis_pids, size=min(n_to_sample, len(f_non_sepsis_pids)), replace=False)
-            keep_f_pids = list(f_sepsis_pids) + list(f_sampled_non_sepsis)
-        else:
-            keep_f_pids = list(f_sepsis_pids)
+    # Balanced target: min of (sepsis + available non-sepsis) per gender
+    f_max = len(f_sepsis_pids) + len(f_non_sepsis_pids)
+    m_max = len(m_sepsis_pids) + len(m_non_sepsis_pids)
+    target_n = min(f_max, m_max)
 
-        df = df[~(f_mask & ~df["patient_id"].isin(keep_f_pids))]
+    logger.info(
+        "D0: balanced cohort (preserving all sepsis) — target %d per gender | "
+        "Female: %d sepsis + up to %d non-sepsis | Male: %d sepsis + up to %d non-sepsis",
+        target_n,
+        len(f_sepsis_pids), target_n - len(f_sepsis_pids),
+        len(m_sepsis_pids), target_n - len(m_sepsis_pids),
+    )
 
-    # Process male patients
-    if n_m > target_n:
-        m_pids = df[m_mask]["patient_id"].unique()
-        m_sepsis_pids = set(df[m_mask & (df["target"] == 1)]["patient_id"].unique())
-        m_non_sepsis_pids = np.array([pid for pid in m_pids if pid not in m_sepsis_pids])
+    # Subsample non-sepsis patients to reach target
+    keep_pids = set(f_sepsis_pids) | set(m_sepsis_pids)  # Keep all sepsis
 
-        # Keep all sepsis patients, then sample non-sepsis to reach target
-        n_to_sample = max(0, target_n - len(m_sepsis_pids))
-        if len(m_non_sepsis_pids) > 0 and n_to_sample > 0:
-            m_sampled_non_sepsis = rng.choice(m_non_sepsis_pids, size=min(n_to_sample, len(m_non_sepsis_pids)), replace=False)
-            keep_m_pids = list(m_sepsis_pids) + list(m_sampled_non_sepsis)
-        else:
-            keep_m_pids = list(m_sepsis_pids)
+    n_f_need = max(0, target_n - len(f_sepsis_pids))
+    if n_f_need > 0 and len(f_non_sepsis_pids) > 0:
+        f_sampled = rng.choice(f_non_sepsis_pids, size=min(n_f_need, len(f_non_sepsis_pids)), replace=False)
+        keep_pids.update(f_sampled)
 
-        df = df[~(m_mask & ~df["patient_id"].isin(keep_m_pids))]
+    n_m_need = max(0, target_n - len(m_sepsis_pids))
+    if n_m_need > 0 and len(m_non_sepsis_pids) > 0:
+        m_sampled = rng.choice(m_non_sepsis_pids, size=min(n_m_need, len(m_non_sepsis_pids)), replace=False)
+        keep_pids.update(m_sampled)
 
+    df = df[df["patient_id"].isin(keep_pids)]
     return df.reset_index(drop=True)
 
 

@@ -12,9 +12,10 @@ from typing import List, Optional
 class ModelConfig:
     # Keys must match entries in models.MODEL_REGISTRY.
     models: List[str] = field(default_factory=lambda: [
-        "liu_glm_cv",           # CV-tuned L1 logistic regression
-        "gradient_boosting",    # Gradient boosting (always available)
-        "ensemble_stack",       # 5-model stacking ensemble (robust fallback)
+        "liu_glm_cv",           # CV-tuned L1 logistic regression (GLM)
+        "liu_xgboost",          # XGBoost with adaptive class weighting
+        "liu_rnn",              # GRU-based RNN (requires PyTorch)
+        "ensemble_stack",       # 5-model stacking ensemble
     ])
     random_state: int = 42
     test_size: float = 0.20
