@@ -27,7 +27,7 @@ _LOG_FEATURES = {
     "Alkalinephos", "BaseExcess", "HCO3", "PaCO2",
 }
 
-_LOOKBACK_STEPS = 5
+_LOOKBACK_STEPS = 2  # Reduce from 5 to avoid overfitting with limited data
 
 
 def _resolve_raw_cols(df: pd.DataFrame) -> "list[str]":

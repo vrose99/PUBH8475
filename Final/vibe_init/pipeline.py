@@ -164,6 +164,20 @@ def main():
         len(df), df["patient_id"].nunique(),
     )
 
+    # ── Step 1b: Clinical feature selection (reduces 431 → ~60-80 features) ────
+    logger.info("=== Step 1b/4 — Clinical feature selection ===")
+    from feature_selection import select_and_engineer_features
+
+    n_features_before = len([c for c in df.columns if c not in {"patient_id", "hour", "SepsisLabel", "target"}])
+    df = select_and_engineer_features(df)
+    n_features_after = len([c for c in df.columns if c not in {"patient_id", "hour", "SepsisLabel", "target"}])
+
+    logger.info(
+        "Feature selection: %d → %d features (%.1f%% reduction)",
+        n_features_before, n_features_after,
+        100 * (1 - n_features_after / n_features_before) if n_features_before > 0 else 0,
+    )
+
     # ── Step 2: Build dataset variants ──────────────────────────────────────
     from joblib import parallel_backend
     from evaluation_timeseries import run_timeseries_evaluation

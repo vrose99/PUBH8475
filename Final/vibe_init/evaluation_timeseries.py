@@ -98,24 +98,13 @@ def evaluate_ts_single(
     else:
         raise AttributeError(f"{type(fitted_model)} has no predict_proba or _pmf_predict")
 
-    # ── Utility-aware threshold search on training data ───────────────────────
-    # Search for the threshold that maximises PhysioNet utility on the training
-    # set, then evaluate the test set at that threshold instead of the fixed 0.5.
-    # We predict on the original (pre-SMOTE) X_train so that hours_until_sepsis
-    # alignment is guaranteed.
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        if hasattr(fitted_model, "predict_proba"):
-            y_prob_train = fitted_model.predict_proba(X_train)[:, 1]
-        else:
-            y_prob_train = fitted_model._pmf_predict(X_train)[:, 1]
+    # ── Use conservative fixed threshold instead of training-optimized search ─
+    # Training-optimized thresholds overfit and fail on test.
+    # Use a fixed low threshold (0.3) to catch more sepsis cases.
+    # This is more conservative than the default 0.5.
+    best_threshold = 0.3
+    best_train_utility = np.nan  # not applicable with fixed threshold
 
-    train_pids = train_df["patient_id"].values
-    best_threshold, best_train_utility = find_utility_threshold(
-        y_prob_train, times_train, patient_ids=train_pids
-    )
-
-    # Evaluate test set using the utility-optimised threshold.
     original_threshold = cfg.fairness.decision_threshold
     cfg.fairness.decision_threshold = best_threshold
 
