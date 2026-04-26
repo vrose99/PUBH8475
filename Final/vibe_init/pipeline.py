@@ -75,7 +75,7 @@ def parse_args():
 
 _TEST_MAX_PATIENTS = 100
 _TEST_MODELS       = ["liu_glm", "liu_xgboost", "liu_rnn"]
-_TEST_MITIGATIONS  = ["none", "reweighting", "smote"]
+_TEST_MITIGATIONS  = ["none", "reweighting", "smote", "threshold_optimization"]
 
 
 def _print_phase(label: str, results: pd.DataFrame):

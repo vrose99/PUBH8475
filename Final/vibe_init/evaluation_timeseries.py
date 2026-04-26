@@ -105,6 +105,32 @@ def evaluate_ts_single(
     best_threshold = 0.3
     best_train_utility = np.nan  # not applicable with fixed threshold
 
+    # ── Per-group threshold rescaling (threshold_optimization mitigation) ──────
+    # When the mitigation returned a _PerGroupThresholdWrapper the model stores
+    # per_group_thresholds_ = {female_val: t_f, male_val: t_m}.
+    # We apply a logit shift so that (adjusted_prob >= best_threshold) is
+    # exactly equivalent to (raw_prob >= per_group_threshold) for each group.
+    # This preserves the existing single-threshold evaluation path while
+    # honouring the group-specific operating points found during calibration.
+    per_group_thresholds = getattr(fitted_model, "per_group_thresholds_", None)
+    if per_group_thresholds is not None:
+        t_global = best_threshold
+        logit_global = np.log(t_global / (1.0 - t_global))
+        y_prob = y_prob.copy()
+        for g_val, t_g in per_group_thresholds.items():
+            g_mask = s_test == g_val
+            if not g_mask.any() or not (0.0 < t_g < 1.0):
+                continue
+            logit_g = np.log(t_g / (1.0 - t_g))
+            eps = 1e-9
+            p_clip = np.clip(y_prob[g_mask], eps, 1.0 - eps)
+            logit_p = np.log(p_clip / (1.0 - p_clip))
+            y_prob[g_mask] = 1.0 / (1.0 + np.exp(-(logit_p - logit_g + logit_global)))
+        logger.info(
+            "Per-group thresholds applied: %s",
+            {k: f"{v:.3f}" for k, v in per_group_thresholds.items()},
+        )
+
     original_threshold = cfg.fairness.decision_threshold
     cfg.fairness.decision_threshold = best_threshold
 

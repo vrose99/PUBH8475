@@ -202,16 +202,209 @@ def apply_fairness_penalty(X, y, sensitive, model, cfg: Config):
         )
     else:
         base = clone(model)
-    
-    # GridSearch: simpler, potentially faster
+
     mitigator = GridSearch(
         estimator=base,
         constraints=EqualizedOdds(),
-        grid_size=10,  # ← controls search granularity
+        grid_size=10,
     )
     mitigator.fit(X, y, sensitive_features=sensitive.astype(int))
     logger.debug("fairness_penalty: GridSearch fitted.")
     return X, y, sensitive, None, mitigator
+
+
+# ── Per-group threshold optimisation ─────────────────────────────────────────
+
+class _PerGroupThresholdWrapper:
+    """
+    Wraps a fitted classifier with per-group decision thresholds.
+
+    The wrapper stores `per_group_thresholds_` so that evaluate_ts_single
+    can apply logit rescaling before calling compute_detection_fairness_report.
+    The raw probabilities from predict_proba() are unchanged; rescaling happens
+    in the evaluation layer so the rest of the pipeline sees consistent scores.
+    """
+
+    def __init__(self, base_model, per_group_thresholds: dict):
+        self._model = base_model
+        self.per_group_thresholds_ = per_group_thresholds  # {group_val: threshold}
+
+    def fit(self, X, y, **kwargs):
+        self._model.fit(X, y, **kwargs)
+        return self
+
+    def predict_proba(self, X):
+        return self._model.predict_proba(X)
+
+    def predict(self, X):
+        return self._model.predict(X)
+
+    def get_params(self, deep=True):
+        return {}
+
+    def set_params(self, **params):
+        return self
+
+
+@register("threshold_optimization")
+def apply_threshold_optimization(X, y, sensitive, model, cfg: Config):
+    """
+    Post-hoc per-group threshold optimisation grounded in PhysioNet utility weights.
+
+    Objective
+    ---------
+    Minimise a utility-weighted fairness gap across a (t_female, t_male) grid:
+
+        score = |w_fn| * |TPR_gap| + |w_fp| * |FPR_gap|
+              + utility_penalty
+
+    where w_fn = -2.0 and w_fp = -0.05 come directly from the PhysioNet 2019
+    challenge utility structure (Config.fairness).  The 40× asymmetry reflects
+    the clinical reality that missing sepsis (FN) is far worse than a false
+    alarm (FP), so the search prioritises closing the TPR gap between groups.
+
+    TP / FP / FN / TN are computed using the utility-function definitions:
+      TP  — positive patient (sepsis) correctly alarmed (utility reward +w_tp)
+      FP  — negative patient (no sepsis) falsely alarmed (utility penalty w_fp)
+      FN  — positive patient missed, no alarm (utility penalty w_fn)
+      TN  — negative patient correctly not alarmed (utility  w_tn = 0)
+
+    Strategy
+    --------
+    1. Hold out 20 % of training data for threshold calibration.
+    2. Fit model on the remaining 80 %.
+    3. Grid-search 20 × 20 = 400 (t_f, t_m) pairs in [0.10, 0.70].
+    4. Select the pair minimising the objective above.
+    5. Refit the final model on the full training set (no data is wasted
+       at inference; the validation split is only used for threshold search).
+
+    The chosen thresholds are stored in `per_group_thresholds_` on the
+    returned wrapper and are consumed by evaluate_ts_single via logit
+    rescaling so the global decision threshold (0.3) still applies uniformly.
+    """
+    import warnings
+    from sklearn.model_selection import StratifiedShuffleSplit
+    from sklearn.base import clone
+
+    rng = np.random.default_rng(cfg.random_state)
+
+    f_val = cfg.fairness.female_value
+    m_val = cfg.fairness.male_value
+
+    # Utility weights directly from PhysioNet 2019 challenge (via config)
+    w_fn = cfg.fairness.utility_w_fn   # -2.0  (missed sepsis)
+    w_fp = cfg.fairness.utility_w_fp   # -0.05 (false alarm)
+
+    # ── Step 1: 80/20 split for threshold calibration ─────────────────────────
+    strat = y.astype(str) + "_" + sensitive.astype(str)
+    sss = StratifiedShuffleSplit(
+        n_splits=1, test_size=0.2, random_state=cfg.random_state
+    )
+    try:
+        tr_idx, val_idx = next(sss.split(X, strat))
+    except ValueError:
+        # Any (group, label) cell with < 2 samples breaks stratification
+        n = len(y)
+        perm = rng.permutation(n)
+        val_n = max(1, int(0.2 * n))
+        val_idx, tr_idx = perm[:val_n], perm[val_n:]
+
+    X_tr, y_tr = X[tr_idx], y[tr_idx]
+    X_val, y_val, s_val = X[val_idx], y[val_idx], sensitive[val_idx]
+
+    # ── Step 2: Fit calibration model on 80 % ─────────────────────────────────
+    cal_model = clone(model)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        cal_model.fit(X_tr, y_tr)
+
+    y_prob_val = cal_model.predict_proba(X_val)[:, 1]
+
+    f_mask = s_val == f_val
+    m_mask = s_val == m_val
+
+    if not f_mask.any() or not m_mask.any():
+        logger.warning(
+            "threshold_optimization: one group absent from val split — "
+            "falling back to t=0.3 for both groups"
+        )
+        final = clone(model)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            final.fit(X, y)
+        return X, y, sensitive, None, _PerGroupThresholdWrapper(
+            final, {f_val: 0.3, m_val: 0.3}
+        )
+
+    y_f, p_f = y_val[f_mask], y_prob_val[f_mask]
+    y_m, p_m = y_val[m_mask], y_prob_val[m_mask]
+
+    # ── Step 3: Grid search over (t_female, t_male) ───────────────────────────
+    thresholds = np.linspace(0.10, 0.70, 20)
+
+    def _group_stats(y_true, y_pred_bin):
+        """TPR, FPR, and per-row utility using PhysioNet TP/FP/FN/TN weights."""
+        n_pos = int((y_true == 1).sum())
+        n_neg = int((y_true == 0).sum())
+        tpr = float((y_pred_bin[y_true == 1] == 1).mean()) if n_pos > 0 else 0.0
+        fpr = float((y_pred_bin[y_true == 0] == 1).mean()) if n_neg > 0 else 0.0
+        tp = int(((y_pred_bin == 1) & (y_true == 1)).sum())
+        fp = int(((y_pred_bin == 1) & (y_true == 0)).sum())
+        fn = int(((y_pred_bin == 0) & (y_true == 1)).sum())
+        util = (
+            cfg.fairness.utility_w_tp * tp
+            + w_fp * fp
+            + w_fn * fn
+        ) / max(len(y_true), 1)
+        return tpr, fpr, util
+
+    best_score = np.inf
+    best_tf, best_tm = 0.3, 0.3
+
+    for t_f in thresholds:
+        pf_bin = (p_f >= t_f).astype(int)
+        tpr_f, fpr_f, util_f = _group_stats(y_f, pf_bin)
+
+        for t_m in thresholds:
+            pm_bin = (p_m >= t_m).astype(int)
+            tpr_m, fpr_m, util_m = _group_stats(y_m, pm_bin)
+
+            # Utility-weighted fairness gap using PhysioNet 2019 weights:
+            #   |w_fn|=2.0  weights the TPR gap  (missing sepsis matters most)
+            #   |w_fp|=0.05 weights the FPR gap  (false alarms matter less)
+            fairness_score = (
+                abs(w_fn) * abs(tpr_f - tpr_m)
+                + abs(w_fp) * abs(fpr_f - fpr_m)
+            )
+
+            # Utility guard: penalise configurations that make either group
+            # far worse off than the conservative global-threshold baseline
+            util_penalty = (
+                max(0.0, -0.25 - util_f) * 10.0
+                + max(0.0, -0.25 - util_m) * 10.0
+            )
+
+            score = fairness_score + util_penalty
+
+            if score < best_score:
+                best_score = score
+                best_tf, best_tm = float(t_f), float(t_m)
+
+    logger.info(
+        "threshold_optimization: t_female=%.3f  t_male=%.3f  "
+        "objective=%.4f  (|w_fn|*|TPR_gap| + |w_fp|*|FPR_gap|)",
+        best_tf, best_tm, best_score,
+    )
+
+    # ── Step 4: Refit on full training set ────────────────────────────────────
+    final = clone(model)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        final.fit(X, y)
+
+    return X, y, sensitive, None, _PerGroupThresholdWrapper(
+        final, {f_val: best_tf, m_val: best_tm}
+    )
 
 
 def get_mitigation(name: str) -> callable:

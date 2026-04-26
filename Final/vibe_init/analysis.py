@@ -23,10 +23,11 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 MITIGATION_LABELS = {
-    "none":             "Baseline",
-    "reweighting":      "Reweighting",
-    "smote":            "SMOTE",
-    "fairness_penalty": "Fairness Penalty",
+    "none":                   "Baseline",
+    "reweighting":            "Reweighting",
+    "smote":                  "SMOTE",
+    "fairness_penalty":       "Fairness Penalty",
+    "threshold_optimization": "Threshold Optimization",
 }
 
 _TS_FAIRNESS_METRICS = [

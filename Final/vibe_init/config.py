@@ -45,6 +45,7 @@ class MitigationConfig:
         "reweighting",
         "smote",
         "fairness_penalty",
+        "threshold_optimization",
     ])
 
 

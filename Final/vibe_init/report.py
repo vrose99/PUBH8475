@@ -43,6 +43,14 @@ MITIGATION_DESCRIPTIONS = {
     "fairness_penalty": "**Fairness Penalty (ExponentiatedGradient)** — fairlearn's "
                         "constrained-optimisation wrapper that explicitly penalises violations "
                         "of the equalized-odds constraint during training.",
+    "threshold_optimization": "**Threshold Optimization** — post-hoc per-group decision "
+                        "threshold search grounded in PhysioNet 2019 utility weights "
+                        "(w_fn=−2.0, w_fp=−0.05). A 20×20 grid of (t_female, t_male) pairs "
+                        "is evaluated on a held-out 20% validation split; the pair minimising "
+                        "|w_fn|·|TPR_gap| + |w_fp|·|FPR_gap| is selected. The asymmetric "
+                        "weights reflect that missed sepsis (FN) is 40× more costly than a "
+                        "false alarm (FP). The model is refit on the full training set; "
+                        "thresholds are applied via logit rescaling at inference.",
 }
 
 
