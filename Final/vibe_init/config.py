@@ -53,6 +53,8 @@ class MitigationConfig:
 class BootstrapConfig:
     enabled: bool = False
     n_iterations: int = 100
+    max_patients_train: Optional[int] = None   # cap on training patients (None = all)
+    max_patients_test: Optional[int] = 100     # patients sampled per bootstrap iteration
 
 
 @dataclass

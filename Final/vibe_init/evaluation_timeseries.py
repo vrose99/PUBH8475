@@ -42,15 +42,21 @@ def evaluate_ts_single(
     cfg: Config,
     rng: np.random.Generator,
     return_predictions: bool = False,
+    train_df: Optional[pd.DataFrame] = None,
+    test_df: Optional[pd.DataFrame] = None,
 ) -> dict:
     """
     Train and evaluate one (model, mitigation) combination on the time-series
     early-detection dataset. Includes advanced feature engineering.
+
+    If train_df/test_df are provided they are used directly (bootstrap path).
+    Otherwise a standard patient-level split is performed on df_ts.
     """
     from feature_engineering import engineer_features
 
     # Split FIRST to prevent data leakage
-    train_df, test_df = patient_level_split(df_ts, cfg, rng)
+    if train_df is None or test_df is None:
+        train_df, test_df = patient_level_split(df_ts, cfg, rng)
 
     # Apply feature engineering separately to each split
     train_df = engineer_features(train_df)
@@ -234,7 +240,7 @@ def run_timeseries_evaluation(
     other   = [c for c in results.columns if c not in id_cols]
     results = results[id_cols + other]
 
-    # Apply bootstrap if enabled
+    # Apply standard bootstrap if enabled
     if cfg.bootstrap.enabled:
         results = apply_bootstrap_to_results(
             results, df_ts, cfg, rng, dataset_id
@@ -245,73 +251,38 @@ def run_timeseries_evaluation(
 
 # ── Bootstrap utilities ────────────────────────────────────────────────────
 
-def _bootstrap_resample_patients(
-    y_prob: np.ndarray,
-    y_true: np.ndarray,
-    sensitive: np.ndarray,
-    hours_until_sepsis: np.ndarray,
-    patient_ids: np.ndarray,
+def _bootstrap_resample_test_patients(
+    test_df: pd.DataFrame,
     rng: np.random.Generator,
     cfg: "Config" = None,
-) -> tuple:
+    n_per_group: Optional[int] = None,
+) -> pd.DataFrame:
     """
-    Resample test set by patient (with replacement) for bootstrap.
-    Stratified by gender: resample all unique female and male patients with replacement.
-    Returns resampled arrays maintaining the same structure.
+    Sample n_per_group female and n_per_group male patients WITH REPLACEMENT
+    from the test pool. Defaults to all available patients per gender.
     """
     from config import Config
     if cfg is None:
         cfg = Config()
 
+    sensitive_col = cfg.fairness.sensitive_column
     f_val = cfg.fairness.female_value
     m_val = cfg.fairness.male_value
 
-    # Split by gender
-    f_mask = sensitive == f_val
-    m_mask = sensitive == m_val
+    f_pids = test_df[test_df[sensitive_col] == f_val]["patient_id"].unique()
+    m_pids = test_df[test_df[sensitive_col] == m_val]["patient_id"].unique()
 
-    f_pids = np.unique(patient_ids[f_mask])
-    m_pids = np.unique(patient_ids[m_mask])
+    n_f = n_per_group if n_per_group is not None else len(f_pids)
+    n_m = n_per_group if n_per_group is not None else len(m_pids)
 
-    # Create mapping from pid to indices
-    pid_to_idx = {pid: np.where(patient_ids == pid)[0] for pid in np.unique(patient_ids)}
+    f_sampled = rng.choice(f_pids, size=n_f, replace=True)
+    m_sampled = rng.choice(m_pids, size=n_m, replace=True)
 
-    # Resample with replacement: all female and male patients
-    f_resampled_pids = rng.choice(f_pids, size=len(f_pids), replace=True)
-    m_resampled_pids = rng.choice(m_pids, size=len(m_pids), replace=True)
+    all_sampled = np.concatenate([f_sampled, m_sampled])
 
-    # Collect indices for resampled patients
-    boot_indices = []
-    for pid in f_resampled_pids:
-        boot_indices.extend(pid_to_idx[pid])
-    for pid in m_resampled_pids:
-        boot_indices.extend(pid_to_idx[pid])
-
-    boot_indices = np.array(boot_indices)
-    return (
-        y_prob[boot_indices],
-        y_true[boot_indices],
-        sensitive[boot_indices],
-        hours_until_sepsis[boot_indices],
-    )
-
-
-def _compute_bootstrap_metrics(
-    y_prob: np.ndarray,
-    y_true: np.ndarray,
-    sensitive: np.ndarray,
-    hours_until_sepsis: np.ndarray,
-    cfg: Config,
-) -> dict:
-    """Compute fairness metrics for a single bootstrap sample."""
-    report = compute_detection_fairness_report(
-        y_prob=y_prob,
-        y_true=y_true,
-        sensitive=sensitive,
-        hours_until_sepsis=hours_until_sepsis,
-        cfg=cfg,
-    )
-    return report
+    # Build the resampled DataFrame, handling repeated patients correctly
+    frames = [test_df[test_df["patient_id"] == pid] for pid in all_sampled]
+    return pd.concat(frames, ignore_index=True)
 
 
 def apply_bootstrap_to_results(
@@ -322,15 +293,50 @@ def apply_bootstrap_to_results(
     dataset_id: str,
 ) -> pd.DataFrame:
     """
-    Apply bootstrap resampling to test metrics.
-    Trains model once, then bootstraps the test set predictions.
+    Bootstrap: fixed training set, resampled test patients per iteration.
 
-    Bootstrap protocol:
-      For each iteration, resample all unique female patients with replacement
-      and all unique male patients with replacement from the test set.
-      This maintains gender balance and scales with max_patients.
-      Compute metrics on each bootstrap sample.
+    Protocol:
+      1. Split all patients into train pool + test pool
+      2. Cap train pool to cfg.bootstrap.max_patients_train
+      3. For each bootstrap iteration:
+         - Sample cfg.bootstrap.max_patients_test patients WITH REPLACEMENT
+           from the test pool (stratified by gender)
+         - Evaluate fixed trained model on that sample
+         - Collect metrics
+      4. Aggregate: median and 2.5/97.5 percentile CIs
     """
+    from data_loader_timeseries import patient_level_split
+
+    # ── Build fixed train set and test pool ──────────────────────────────────
+    train_df_full, test_pool_df = patient_level_split(df_ts, cfg, rng)
+
+    # Cap training patients if requested
+    max_train = cfg.bootstrap.max_patients_train
+    if max_train and train_df_full["patient_id"].nunique() > max_train:
+        sensitive_col = cfg.fairness.sensitive_column
+        f_val = cfg.fairness.female_value
+        m_val = cfg.fairness.male_value
+
+        f_pids = train_df_full[train_df_full[sensitive_col] == f_val]["patient_id"].unique()
+        m_pids = train_df_full[train_df_full[sensitive_col] == m_val]["patient_id"].unique()
+
+        # Keep equal numbers per gender up to max_train total
+        n_per_group = max_train // 2
+        f_keep = rng.choice(f_pids, size=min(n_per_group, len(f_pids)), replace=False)
+        m_keep = rng.choice(m_pids, size=min(n_per_group, len(m_pids)), replace=False)
+        keep_pids = np.concatenate([f_keep, m_keep])
+        train_df = train_df_full[train_df_full["patient_id"].isin(keep_pids)].reset_index(drop=True)
+    else:
+        train_df = train_df_full
+
+    logger.info(
+        "Bootstrap setup: train=%d patients (%d rows) | test pool=%d patients (%d rows) | "
+        "sampling %d per iteration",
+        train_df["patient_id"].nunique(), len(train_df),
+        test_pool_df["patient_id"].nunique(), len(test_pool_df),
+        cfg.bootstrap.max_patients_test,
+    )
+
     bootstrap_results = []
 
     for idx, row in results.iterrows():
@@ -338,31 +344,12 @@ def apply_bootstrap_to_results(
         mitigation_name = row["mitigation"]
 
         logger.info(
-            "Bootstrapping %s / %s (%d iterations)",
+            "Bootstrap %s / %s (%d iterations)",
             model_name, mitigation_name, cfg.bootstrap.n_iterations,
         )
 
-        # Train model once and get predictions
-        boot_result = evaluate_ts_single(
-            df_ts=df_ts,
-            model_name=model_name,
-            mitigation_name=mitigation_name,
-            cfg=cfg,
-            rng=rng,
-            return_predictions=True,
-        )
-
-        # Extract predictions
-        y_prob = boot_result.pop("_y_prob")
-        y_test = boot_result.pop("_y_test")
-        s_test = boot_result.pop("_s_test")
-        times_test = boot_result.pop("_times_test")
-        patient_ids_test = boot_result.pop("_patient_ids_test")
-
-        # Store baseline metrics
-        baseline_metrics = {col: boot_result[col] for col in boot_result.keys()}
-
-        # Bootstrap resample test set
+        baseline_metrics = {col: row[col] for col in row.index
+                            if col not in ["dataset_id", "model", "mitigation"]}
         bootstrap_metrics = {col: [] for col in baseline_metrics.keys()}
 
         for boot_iter in tqdm(
@@ -371,23 +358,25 @@ def apply_bootstrap_to_results(
             leave=False,
         ):
             try:
-                # Resample test set by patient (stratified by gender: all female + all male)
-                y_prob_boot, y_test_boot, s_test_boot, times_test_boot = (
-                    _bootstrap_resample_patients(
-                        y_prob, y_test, s_test, times_test,
-                        patient_ids_test, rng, cfg=cfg,
-                    )
+                # Sample max_patients_test patients from test pool with replacement
+                test_df_boot = _bootstrap_resample_test_patients(
+                    test_pool_df, rng, cfg,
+                    n_per_group=cfg.bootstrap.max_patients_test // 2,
                 )
 
-                # Compute metrics on bootstrap sample
-                boot_metrics = _compute_bootstrap_metrics(
-                    y_prob_boot, y_test_boot, s_test_boot, times_test_boot, cfg
+                boot_result = evaluate_ts_single(
+                    df_ts=df_ts,
+                    model_name=model_name,
+                    mitigation_name=mitigation_name,
+                    cfg=cfg,
+                    rng=rng,
+                    train_df=train_df,
+                    test_df=test_df_boot,
                 )
 
-                # Store metrics
                 for col in baseline_metrics.keys():
-                    if col in boot_metrics:
-                        bootstrap_metrics[col].append(boot_metrics[col])
+                    if col in boot_result:
+                        bootstrap_metrics[col].append(boot_result[col])
 
             except Exception as exc:
                 logger.warning(
@@ -395,18 +384,16 @@ def apply_bootstrap_to_results(
                     boot_iter, model_name, mitigation_name, exc,
                 )
 
-        # Aggregate bootstrap metrics
         agg_row = {
             "dataset_id": dataset_id,
             "model": model_name,
             "mitigation": mitigation_name,
         }
 
-        # Add baseline values and bootstrap CIs
         for col, baseline_val in baseline_metrics.items():
             if col in bootstrap_metrics and bootstrap_metrics[col]:
                 vals = np.array(bootstrap_metrics[col])
-                agg_row[col] = float(np.median(vals))  # Use median from bootstrap
+                agg_row[col] = float(np.median(vals))
                 agg_row[f"{col}_ci_lower"] = float(np.percentile(vals, 2.5))
                 agg_row[f"{col}_ci_upper"] = float(np.percentile(vals, 97.5))
             else:

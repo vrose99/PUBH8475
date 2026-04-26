@@ -57,7 +57,11 @@ def parse_args():
     p.add_argument("--data-dir",     type=Path, default=None)
     p.add_argument("--output-dir",   type=Path, default=Path("outputs"))
     p.add_argument("--max-patients", type=int,  default=None,
-                   help="Cap patient count for smoke-testing")
+                   help="Cap total patient count (smoke-testing only)")
+    p.add_argument("--max-patients-train", type=int, default=None,
+                   help="Maximum patients used for model training")
+    p.add_argument("--max-patients-test", type=int, default=100,
+                   help="Patients sampled per bootstrap iteration (default: 100)")
     p.add_argument("--no-analysis",  action="store_true",
                    help="Skip post-hoc analysis figures")
     p.add_argument("--no-report",    action="store_true",
@@ -149,6 +153,9 @@ def main():
 
     cfg.bootstrap.enabled = args.bootstrap
     cfg.bootstrap.n_iterations = args.bootstrap_iters
+    if args.max_patients_train:
+        cfg.bootstrap.max_patients_train = args.max_patients_train
+    cfg.bootstrap.max_patients_test = args.max_patients_test
 
     cfg.__post_init__()
     rng = np.random.default_rng(cfg.random_state)
