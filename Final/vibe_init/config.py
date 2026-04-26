@@ -55,6 +55,7 @@ class BootstrapConfig:
     n_iterations: int = 100
     max_patients_train: Optional[int] = None   # cap on training patients (None = all)
     max_patients_test: Optional[int] = 100     # patients sampled per bootstrap iteration
+    max_test_pool: Optional[int] = None        # cap on test pool size before sampling (None = all)
 
 
 @dataclass

@@ -78,6 +78,8 @@ def parse_args():
                    help="Enable bootstrap resampling for metric estimates")
     p.add_argument("--bootstrap-iters", type=int, default=100,
                    help="Number of bootstrap iterations (default: 100)")
+    p.add_argument("--max-test-pool", type=int, default=None,
+                   help="Cap test pool size before bootstrap sampling (None = all available)")
     return p.parse_args()
 
 
@@ -156,6 +158,8 @@ def main():
     if args.max_patients_train:
         cfg.bootstrap.max_patients_train = args.max_patients_train
     cfg.bootstrap.max_patients_test = args.max_patients_test
+    if args.max_test_pool:
+        cfg.bootstrap.max_test_pool = args.max_test_pool
 
     cfg.__post_init__()
     rng = np.random.default_rng(cfg.random_state)

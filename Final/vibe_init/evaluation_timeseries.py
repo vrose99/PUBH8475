@@ -310,6 +310,18 @@ def apply_bootstrap_to_results(
     # ── Build fixed train set and test pool ──────────────────────────────────
     train_df_full, test_pool_df = patient_level_split(df_ts, cfg, rng)
 
+    # Cap test pool if requested
+    max_test_pool = cfg.bootstrap.max_test_pool
+    if max_test_pool and test_pool_df["patient_id"].nunique() > max_test_pool:
+        test_pool_pids = test_pool_df["patient_id"].unique()
+        n_pool = len(test_pool_pids)
+        selected_pids = rng.choice(test_pool_pids, size=min(max_test_pool, n_pool), replace=False)
+        test_pool_df = test_pool_df[test_pool_df["patient_id"].isin(selected_pids)].reset_index(drop=True)
+        logger.info(
+            "Test pool capped: %d → %d patients",
+            n_pool, test_pool_df["patient_id"].nunique(),
+        )
+
     # Cap training patients if requested
     max_train = cfg.bootstrap.max_patients_train
     if max_train and train_df_full["patient_id"].nunique() > max_train:
