@@ -62,6 +62,27 @@ def evaluate_ts_single(
     train_df = engineer_features(train_df)
     test_df = engineer_features(test_df)
 
+    # Cap training patients if max_patients_train is set (applies with or without bootstrap)
+    max_train = cfg.bootstrap.max_patients_train
+    if max_train and train_df["patient_id"].nunique() > max_train:
+        rng_local = np.random.default_rng(cfg.random_state)
+        sensitive_col = cfg.fairness.sensitive_column
+        f_val = cfg.fairness.female_value
+        m_val = cfg.fairness.male_value
+
+        f_pids = train_df[train_df[sensitive_col] == f_val]["patient_id"].unique()
+        m_pids = train_df[train_df[sensitive_col] == m_val]["patient_id"].unique()
+
+        n_per_group = max_train // 2
+        f_keep = rng_local.choice(f_pids, size=min(n_per_group, len(f_pids)), replace=False)
+        m_keep = rng_local.choice(m_pids, size=min(n_per_group, len(m_pids)), replace=False)
+        keep_pids = np.concatenate([f_keep, m_keep])
+        train_df = train_df[train_df["patient_id"].isin(keep_pids)].reset_index(drop=True)
+        logger.info(
+            "Training patients capped to %d (balanced by gender)",
+            max_train,
+        )
+
     X_train, y_train, s_train, times_train, feat_names = split_Xy_sensitive(train_df, cfg)
     X_test,  y_test,  s_test,  times_test,  _          = split_Xy_sensitive(test_df,  cfg)
 
