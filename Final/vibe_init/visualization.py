@@ -374,7 +374,7 @@ def table_baseline_comparison(results: pd.DataFrame, cfg: Config) -> pd.DataFram
     import plotly.graph_objects as go
 
     dataset_map = {"D0": "Balanced", "D1A": "Row Removal", "D2A": "Missingness"}
-    model_map = {"liu_glm": "GLM", "liu_xgboost": "XGBoost", "liu_rnn": "RNN"}
+    model_map = {"liu_glm_cv": "GLM", "liu_xgboost": "XGBoost", "liu_rnn": "RNN"}
 
     df = results.copy()
     df["dataset_id"] = df["dataset_id"].map(dataset_map)
@@ -477,12 +477,12 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
     import plotly.graph_objects as go
 
     dataset_map = {"D0": "Balanced", "D1A": "Row Removal", "D2A": "Missingness"}
-    model_map = {"liu_glm": "GLM", "liu_xgboost": "XGBoost", "liu_rnn": "RNN"}
+    model_map = {"liu_glm_cv": "GLM", "liu_xgboost": "XGBoost", "liu_rnn": "RNN"}
     mitigation_map = {
         "none": "Original",
         "reweighting": "Reweighting",
         "smote": "SMOTE",
-        "threshold_optimization": "Fairness Penalty",
+        "fairness_penalty": "Fairness Penalty",
     }
 
     df = results.copy()
