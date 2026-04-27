@@ -634,7 +634,7 @@ def table_and_heatmaps_per_model(results: pd.DataFrame, cfg: Config):
             fig_heat.update_traces(text=text_array, texttemplate="%{text}", textfont={"size": 10})
 
             fig_heat.update_layout(
-                title=f"{model_name} — {metric} Heatmap",
+                title=f"{model_name} — {metric}",
                 xaxis_title="Mitigation",
                 yaxis_title="Dataset",
                 height=600,
