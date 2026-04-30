@@ -15,7 +15,12 @@ Models:
 
 import logging
 from typing import Tuple
+import os
 
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
 import numpy as np
 import pandas as pd
 from sklearn.impute import SimpleImputer
@@ -233,17 +238,14 @@ class XGBoostModel(BaseModel):
         return self
 
     def predict_proba(self, X):
-        """Return probability of sepsis (column 1)."""
+        """Return probability of sepsis."""
         if not self._is_fit:
             raise ValueError("Model not fit. Call fit() first.")
 
         X, _ = self._preprocess_data(X)
         X = self.imputer.transform(X)
 
-        # XGBoost returns 1-D probabilities, reshape to (n, 2)
-        proba_pos = self.model.predict_proba(X)
-        proba_neg = 1 - proba_pos
-        return np.column_stack([proba_neg, proba_pos])
+        return self.model.predict_proba(X)
 
 
 class GRUModel(BaseModel):
@@ -344,12 +346,12 @@ class GRUModel(BaseModel):
         optimizer = optim.Adam(self.gru.parameters(), lr=self.learning_rate)
 
         # Compute class weight for imbalanced data
-        pos_weight = (y == 0).sum() / (y == 1).sum()
+        # pos_weight = (y == 0).sum() / (y == 1).sum()
         criterion = nn.BCELoss()
 
         # Training loop
-        X_tensor = torch.tensor(X, dtype=torch.float32, device=self._device)
-        y_tensor = torch.tensor(y, dtype=torch.float32, device=self._device)
+        # X_tensor = torch.tensor(X, dtype=torch.float32, device=self._device)
+        # y_tensor = torch.tensor(y, dtype=torch.float32, device=self._device)
 
         n_samples = len(X)
         n_batches = (n_samples + self.batch_size - 1) // self.batch_size
@@ -366,8 +368,18 @@ class GRUModel(BaseModel):
                 end = min((batch_idx + 1) * self.batch_size, n_samples)
 
                 batch_indices = indices[start:end]
-                X_batch = X_tensor[batch_indices].unsqueeze(1)  # (batch, 1, features)
-                y_batch = y_tensor[batch_indices]
+
+                X_batch = torch.tensor(
+                    X[batch_indices],
+                    dtype=torch.float32,
+                    device=self._device
+                ).unsqueeze(1)
+
+                y_batch = torch.tensor(
+                    y[batch_indices],
+                    dtype=torch.float32,
+                    device=self._device
+                )
 
                 optimizer.zero_grad()
                 y_pred = self.gru(X_batch)
@@ -398,12 +410,21 @@ class GRUModel(BaseModel):
         X = self.scaler.transform(X)
 
         self.gru.eval()
-        X_tensor = torch.tensor(X, dtype=torch.float32, device=self._device)
+        probs = []
 
         with torch.no_grad():
-            X_tensor = X_tensor.unsqueeze(1)  # (n, 1, features)
-            proba_pos = self.gru(X_tensor).cpu().numpy()
+            for start in range(0, len(X), self.batch_size):
+                end = min(start + self.batch_size, len(X))
+                X_batch = torch.tensor(
+                    X[start:end],
+                    dtype=torch.float32,
+                    device=self._device
+                ).unsqueeze(1)
 
+                proba_batch = self.gru(X_batch).cpu().numpy()
+                probs.append(proba_batch)
+
+        proba_pos = np.concatenate(probs)
         proba_neg = 1 - proba_pos
         return np.column_stack([proba_neg, proba_pos])
 
