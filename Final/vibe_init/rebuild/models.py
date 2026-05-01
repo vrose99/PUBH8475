@@ -206,11 +206,12 @@ class XGBoostModel(BaseModel):
             subsample=0.8,
             colsample_bytree=0.8,
             colsample_bylevel=0.8,
-            reg_alpha=1.0,
-            reg_lambda=1.0,
+            reg_alpha=0.1,
+            reg_lambda=0.5,
+            max_delta_step=1,       # XGBoost recommendation for imbalanced data
             objective="binary:logistic",
             eval_metric="auc",
-            scale_pos_weight=1,
+            scale_pos_weight=1,  # overridden in fit() from actual training labels
             random_state=random_state,
             n_jobs=1,
             verbosity=0,
@@ -224,6 +225,13 @@ class XGBoostModel(BaseModel):
 
         # Impute missing values
         X = self.imputer.fit_transform(X)
+
+        # Set scale_pos_weight from actual class ratio in this training split.
+        # Using the full ratio keeps models sensitive to rare sepsis events.
+        n_neg = int((y == 0).sum())
+        n_pos = int((y == 1).sum())
+        spw = n_neg / n_pos if n_pos > 0 else 1.0
+        self.model.set_params(scale_pos_weight=spw)
 
         # Fit XGBoost
         self.model.fit(X, y)
@@ -306,7 +314,7 @@ class GRUModel(BaseModel):
         np.random.seed(random_state)
 
     def _build_gru(self, n_features: int):
-        """Build GRU architecture."""
+        """Build GRU architecture returning raw logits (no sigmoid)."""
 
         class _GRUNet(nn.Module):
             def __init__(self, n_features, hidden_size, num_layers, dropout):
@@ -319,15 +327,12 @@ class GRUModel(BaseModel):
                     batch_first=True,
                 )
                 self.fc = nn.Linear(hidden_size, 1)
-                self.sigmoid = nn.Sigmoid()
 
             def forward(self, x):
-                # x: (batch, seq_len, features)
+                # x: (batch, seq_len, features) — returns logits, not probabilities
                 gru_out, _ = self.gru(x)
-                # Take last timestep
                 last_out = gru_out[:, -1, :]
-                logit = self.fc(last_out)
-                return self.sigmoid(logit).squeeze(-1)
+                return self.fc(last_out).squeeze(-1)
 
         return _GRUNet(n_features, self.hidden_size, self.num_layers, self.dropout).to(
             self._device
@@ -345,13 +350,15 @@ class GRUModel(BaseModel):
         self.gru = self._build_gru(X.shape[1])
         optimizer = optim.Adam(self.gru.parameters(), lr=self.learning_rate)
 
-        # Compute class weight for imbalanced data
-        # pos_weight = (y == 0).sum() / (y == 1).sum()
-        criterion = nn.BCELoss()
-
-        # Training loop
-        # X_tensor = torch.tensor(X, dtype=torch.float32, device=self._device)
-        # y_tensor = torch.tensor(y, dtype=torch.float32, device=self._device)
+        # Weighted loss using full class ratio to keep the GRU sensitive to
+        # rare sepsis events. The PhysioNet utility function penalises missed
+        # sepsis (-2) much more than false alarms (-0.05), so liberal alarming
+        # is correct behaviour.
+        n_neg = int((y == 0).sum())
+        n_pos = int((y == 1).sum())
+        pw = n_neg / n_pos if n_pos > 0 else 1.0
+        pos_weight = torch.tensor([pw], dtype=torch.float32, device=self._device)
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
         n_samples = len(X)
         n_batches = (n_samples + self.batch_size - 1) // self.batch_size
@@ -421,7 +428,9 @@ class GRUModel(BaseModel):
                     device=self._device
                 ).unsqueeze(1)
 
-                proba_batch = self.gru(X_batch).cpu().numpy()
+                # Network returns logits; apply sigmoid to get probabilities
+                logits = self.gru(X_batch)
+                proba_batch = torch.sigmoid(logits).cpu().numpy()
                 probs.append(proba_batch)
 
         proba_pos = np.concatenate(probs)
