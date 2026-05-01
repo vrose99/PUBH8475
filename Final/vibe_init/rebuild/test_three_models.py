@@ -38,12 +38,12 @@ from utility import physionet_utility
 # CONFIGURATION
 # ─────────────────────────────────────────────────────────────────────────────
 
-TRAIN_SIZE = 300
+TRAIN_SIZE = 20000
 THRESHOLD = 0.4
-BOOTSTRAP_POOL_SIZE = 100
-BOOTSTRAP_EVAL_SIZE = 50
-N_BOOTSTRAP_ITERATIONS = 5
-RANDOM_STATE = 42
+BOOTSTRAP_POOL_SIZE = 2000
+BOOTSTRAP_EVAL_SIZE = 500
+N_BOOTSTRAP_ITERATIONS = 5000
+RANDOM_STATE = 1
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN
