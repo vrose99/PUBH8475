@@ -2,7 +2,7 @@
 Dataset perturbations for robustness evaluation.
 
 Variants (following main pipeline):
-  D0 — Original: gender-balanced with all sepsis cases preserved
+  D0 — Original: input data as-is
   D1A — Row removal: 50% of non-sepsis female rows removed
   D2A — Missingness-at-random: 25% of non-sepsis female rows have 25% of measurements set to NaN
 
@@ -57,15 +57,15 @@ def build_all_datasets(
     -------
     dict
         {
-            'D0': original balanced dataset,
+            'D0': original dataset,
             'D1A': dataset with 50% of non-sepsis female rows removed,
             'D2A': dataset with 25% of non-sepsis female rows having 25% measurements as NaN
         }
     """
     rng = np.random.default_rng(random_state)
 
-    # ── D0: Parent — forced gender parity ────────────────────────────────────
-    df_d0 = _dataset_parent_parity(df_train.copy(), female_val, rng)
+    # ── D0: Original (use as-is) ─────────────────────────────────────────────
+    df_d0 = df_train.copy()
 
     # ── D1A: Row removal (females only) ──────────────────────────────────────
     df_d1a = _dataset_row_removal(df_d0.copy(), female_val, rng)
@@ -84,85 +84,13 @@ def build_all_datasets(
         n_rows = len(dff)
         f_rows = len(dff[dff["Gender"] == female_val]) if "Gender" in dff.columns else 0
         m_rows = len(dff[dff["Gender"] != female_val]) if "Gender" in dff.columns else 0
+        n_missing = dff.isna().sum().sum()
         logger.info(
-            "%s: %d patients, %d rows | Female: %d rows | Male: %d rows",
-            did, n_patients, n_rows, f_rows, m_rows,
+            "%s: %d patients, %d rows | Female: %d rows | Male: %d rows | Missing values: %d",
+            did, n_patients, n_rows, f_rows, m_rows, n_missing,
         )
 
     return variants
-
-
-def _dataset_parent_parity(
-    df_train: pd.DataFrame,
-    female_val: str = 'F',
-    rng: np.random.Generator = None,
-) -> pd.DataFrame:
-    """
-    Create balanced gender cohort while preserving ALL sepsis cases.
-
-    Strategy:
-      1. Keep all sepsis patients (SepsisLabel==1) from both genders
-      2. Calculate target count per gender (minimum of both groups)
-      3. Randomly subsample non-sepsis patients to reach balanced target
-
-    This ensures zero sepsis cases are removed and male/female counts are equal.
-    """
-    if rng is None:
-        rng = np.random.default_rng(42)
-
-    df = df_train.copy()
-
-    f_mask = df["Gender"] == female_val
-    m_mask = df["Gender"] != female_val
-
-    f_pids = df[f_mask]["patient_id"].unique()
-    m_pids = df[m_mask]["patient_id"].unique()
-
-    # All sepsis patients (will be preserved)
-    f_sepsis_pids = set(df[f_mask & (df["SepsisLabel"] == 1)]["patient_id"].unique())
-    m_sepsis_pids = set(df[m_mask & (df["SepsisLabel"] == 1)]["patient_id"].unique())
-
-    # All non-sepsis patients (available for subsampling)
-    f_non_sepsis_pids = np.array([pid for pid in f_pids if pid not in f_sepsis_pids])
-    m_non_sepsis_pids = np.array([pid for pid in m_pids if pid not in m_sepsis_pids])
-
-    # Balanced target: min of (sepsis + available non-sepsis) per gender
-    f_max = len(f_sepsis_pids) + len(f_non_sepsis_pids)
-    m_max = len(m_sepsis_pids) + len(m_non_sepsis_pids)
-    target_n = min(f_max, m_max)
-
-    logger.info(
-        "D0: balanced cohort (preserving all sepsis) — target %d per gender | "
-        "Female: %d sepsis + up to %d non-sepsis | Male: %d sepsis + up to %d non-sepsis",
-        target_n,
-        len(f_sepsis_pids), target_n - len(f_sepsis_pids),
-        len(m_sepsis_pids), target_n - len(m_sepsis_pids),
-    )
-
-    # Keep all sepsis patients
-    keep_pids = set(f_sepsis_pids) | set(m_sepsis_pids)
-
-    # Subsample non-sepsis patients to reach target
-    n_f_need = max(0, target_n - len(f_sepsis_pids))
-    if n_f_need > 0 and len(f_non_sepsis_pids) > 0:
-        f_sampled = rng.choice(
-            f_non_sepsis_pids,
-            size=min(n_f_need, len(f_non_sepsis_pids)),
-            replace=False
-        )
-        keep_pids.update(f_sampled)
-
-    n_m_need = max(0, target_n - len(m_sepsis_pids))
-    if n_m_need > 0 and len(m_non_sepsis_pids) > 0:
-        m_sampled = rng.choice(
-            m_non_sepsis_pids,
-            size=min(n_m_need, len(m_non_sepsis_pids)),
-            replace=False
-        )
-        keep_pids.update(m_sampled)
-
-    df = df[df["patient_id"].isin(keep_pids)]
-    return df.reset_index(drop=True)
 
 
 def _dataset_row_removal(
@@ -172,9 +100,9 @@ def _dataset_row_removal(
     removal_fraction: float = 0.5,
 ) -> pd.DataFrame:
     """
-    Remove 50% of non-sepsis rows for female patients.
-    Removes entire patients (preserves time-series structure).
-    Preserves all sepsis cases.
+    Remove 50% of non-sepsis ROWS for female patients.
+    Removes at the row level (patient-hour level), not patient level.
+    Preserves all sepsis rows (SepsisLabel==1).
 
     Parameters
     ----------
@@ -185,7 +113,7 @@ def _dataset_row_removal(
     rng : np.random.Generator, optional
         Random number generator
     removal_fraction : float
-        Fraction of non-sepsis females to remove (default 0.5 = 50%)
+        Fraction of non-sepsis female rows to remove (default 0.5 = 50%)
 
     Returns
     -------
@@ -196,25 +124,27 @@ def _dataset_row_removal(
         rng = np.random.default_rng(42)
 
     df = df_train.copy()
-    female_mask = df["Gender"] == female_val
-    female_pids = df[female_mask]["patient_id"].unique()
 
-    # Separate sepsis and non-sepsis patients
-    sepsis_pids = set(df[female_mask & (df["SepsisLabel"] == 1)]["patient_id"].unique())
-    non_sepsis_pids = np.array([pid for pid in female_pids if pid not in sepsis_pids])
+    # Select all non-sepsis female rows
+    female_mask = (df["Gender"] == female_val).values
+    non_sepsis_mask = (df["SepsisLabel"] == 0).values
+    removable_mask = female_mask & non_sepsis_mask
 
-    # Remove fraction of non-sepsis females
-    n_remove = max(1, int(len(non_sepsis_pids) * removal_fraction))
-    if len(non_sepsis_pids) > 0:
-        remove_pids = rng.choice(
-            non_sepsis_pids,
-            size=min(n_remove, len(non_sepsis_pids)),
+    n_removable = removable_mask.sum()
+    n_remove = max(1, int(n_removable * removal_fraction))
+
+    if n_removable > 0:
+        # Get indices of rows to remove
+        removable_indices = np.where(removable_mask)[0]
+        remove_indices = rng.choice(
+            removable_indices,
+            size=min(n_remove, len(removable_indices)),
             replace=False
         )
-    else:
-        remove_pids = []
 
-    df = df[~df["patient_id"].isin(remove_pids)]
+        # Remove those rows
+        df = df.drop(df.index[remove_indices])
+
     return df.reset_index(drop=True)
 
 
@@ -261,19 +191,19 @@ def _dataset_mar(
     # Select fraction of non-sepsis female rows to perturb
     n_perturb = max(1, int(n_available * missing_row_fraction))
     if n_available > 0:
-        perturb_idx = rng.choice(
+        perturb_indices = rng.choice(
             np.where(perturb_mask)[0],
             size=min(n_perturb, n_available),
             replace=False
         )
     else:
-        perturb_idx = []
+        perturb_indices = []
 
     # For each perturbed row, set fraction of numeric columns to NaN
     numeric_cols = _get_numeric_cols(df)
     n_cols_blank = max(1, int(len(numeric_cols) * missing_col_fraction))
 
-    for idx in perturb_idx:
+    for idx in perturb_indices:
         cols_to_blank = rng.choice(numeric_cols, size=n_cols_blank, replace=False)
         df.iloc[idx, df.columns.get_indexer(cols_to_blank)] = np.nan
 
