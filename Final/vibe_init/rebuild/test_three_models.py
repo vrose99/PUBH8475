@@ -115,6 +115,78 @@ print(f"  D0 (original):      {len(train_df_perturbed['D0'])} rows, {train_df_pe
 print(f"  D1A (row removal):  {len(train_df_perturbed['D1A'])} rows, {train_df_perturbed['D1A']['patient_id'].nunique()} patients")
 print(f"  D2A (MAR):          {len(train_df_perturbed['D2A'])} rows, {train_df_perturbed['D2A']['patient_id'].nunique()} patients")
 
+# Extract training data for each perturbation (once)
+print(f"\nExtracting training data...")
+train_data_by_perturbation = {}
+for perturbation_name in PERTURBATION_NAMES:
+    train_df_variant = train_df_perturbed[perturbation_name]
+    X_train, y_train = extract_Xy(train_df_variant, "SepsisLabel")
+    s_train = train_df_variant["Gender"].values
+    train_data_by_perturbation[perturbation_name] = (X_train, y_train, s_train)
+
+# Pre-compile mitigation functions
+mitigation_fns = {name: get_mitigation(name) for name in MITIGATION_NAMES}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PHASE 1: FIT ALL MODELS (no bootstrap loop)
+# ──────────────────────────────────────────────────────────────────────────────
+print(f"\nPhase 1: Fitting all {len(MODEL_NAMES)} × {len(MITIGATION_NAMES)} × {len(PERTURBATION_NAMES)} = {len(MODEL_NAMES)*len(MITIGATION_NAMES)*len(PERTURBATION_NAMES)} model combinations...")
+
+fitted_models = {}  # Key: (model_name, mitigation_name, perturbation_name)
+
+for perturbation_name in PERTURBATION_NAMES:
+    X_train, y_train, s_train = train_data_by_perturbation[perturbation_name]
+
+    for mitigation_name in MITIGATION_NAMES:
+        mitigation_fn = mitigation_fns[mitigation_name]
+
+        # Apply mitigation (SMOTE, reweighting, etc.) — only once per perturbation-mitigation combo
+        if mitigation_name == 'fairness_penalty':
+            mitigated_data = [(X_train, y_train, s_train, None)]  # Will be handled per-model
+        else:
+            X_train_mit, y_train_mit, sample_weights = mitigation_fn(X_train, y_train, s_train)
+            mitigated_data = [(X_train_mit, y_train_mit, sample_weights, None)]
+
+        for model_name in MODEL_NAMES:
+            try:
+                # Create fresh model
+                if model_name == "LogisticGLM":
+                    model = LogisticGLM(C=0.1)
+                elif model_name == "XGBoost":
+                    model = XGBoostModel()
+                elif model_name == "GRU":
+                    model = GRUModel()
+                else:
+                    raise ValueError(f"Unknown model: {model_name}")
+
+                # For fairness_penalty, fit the mitigation per-model
+                if mitigation_name == 'fairness_penalty':
+                    X_train_mit, y_train_mit, sample_weights, mitigated_model = mitigation_fn(
+                        X_train, y_train, s_train, model=model
+                    )
+                else:
+                    # Use pre-computed mitigated data
+                    X_train_mit, y_train_mit, sample_weights, mitigated_model = mitigated_data[0]
+
+                # Fit model
+                if mitigated_model is None:
+                    model.fit(X_train_mit, y_train_mit, sample_weight=sample_weights, mitigation=mitigation_name)
+                else:
+                    model = mitigated_model
+
+                # Cache the fitted model
+                key = (model_name, mitigation_name, perturbation_name)
+                fitted_models[key] = model
+
+            except Exception as e:
+                print(f"ERROR fitting {model_name} × {mitigation_name} × {perturbation_name}: {e}")
+
+print(f"  Fitted {len(fitted_models)} models (target: {len(MODEL_NAMES)*len(MITIGATION_NAMES)*len(PERTURBATION_NAMES)})")
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PHASE 2: EVALUATE ON BOOTSTRAP SAMPLES (no refitting)
+# ──────────────────────────────────────────────────────────────────────────────
+
 # Initialize results storage: {(model, mitigation, perturbation): {...}}
 results = {}
 for model_name in MODEL_NAMES:
@@ -128,8 +200,7 @@ for model_name in MODEL_NAMES:
                 'n_alarms': []
             }
 
-# Bootstrap evaluation
-print(f"\nBootstrap evaluation (threshold={THRESHOLD}):")
+print(f"\nPhase 2: Bootstrap evaluation (threshold={THRESHOLD}):")
 print(f"{'Model':<15} {'Mitigation':<20} {'Perturbation':<12} {'Iter':<5} {'PhysioNet_U':<12} {'Disp_Impact':<12} {'Eq_Opp':<12}")
 print("-" * 120)
 
@@ -149,56 +220,15 @@ for iter_idx in tqdm(range(N_BOOTSTRAP_ITERATIONS), desc="Bootstrap iterations",
     gender = boot_df["Gender"].values
     hours_until_sepsis = boot_df["hours_until_sepsis"].values if "hours_until_sepsis" in boot_df.columns else np.full(len(boot_df), np.nan)
 
-    # Pre-extract training data for each perturbation (avoid redundant extraction)
-    train_data_by_perturbation = {}
-    for perturbation_name in PERTURBATION_NAMES:
-        train_df_variant = train_df_perturbed[perturbation_name]
-        X_train, y_train = extract_Xy(train_df_variant, "SepsisLabel")
-        s_train = train_df_variant["Gender"].values
-        train_data_by_perturbation[perturbation_name] = (X_train, y_train, s_train)
-
-    # Pre-compile mitigation functions
-    mitigation_fns = {name: get_mitigation(name) for name in MITIGATION_NAMES}
-
-    # For each model-perturbation-mitigation combination (reordered for cache locality)
+    # Evaluate all fitted models on this bootstrap sample
     for model_name in MODEL_NAMES:
-        for perturbation_name in PERTURBATION_NAMES:
-            X_train, y_train, s_train = train_data_by_perturbation[perturbation_name]
-
-            for mitigation_name in MITIGATION_NAMES:
+        for mitigation_name in MITIGATION_NAMES:
+            for perturbation_name in PERTURBATION_NAMES:
                 try:
-                    # Create fresh model instance
-                    if model_name == "LogisticGLM":
-                        model = LogisticGLM(C=0.1)
-                    elif model_name == "XGBoost":
-                        model = XGBoostModel()
-                    elif model_name == "GRU":
-                        model = GRUModel()
-                    else:
-                        raise ValueError(f"Unknown model: {model_name}")
+                    key = (model_name, mitigation_name, perturbation_name)
+                    model = fitted_models[key]  # Retrieve pre-fitted model
 
-                    # Apply mitigation to training data
-                    mitigation_fn = mitigation_fns[mitigation_name]
-                    mitigated_model = None
-
-                    if mitigation_name == 'fairness_penalty':
-                        # Fairness penalty returns a fitted model
-                        X_train_mit, y_train_mit, sample_weights, mitigated_model = mitigation_fn(
-                            X_train, y_train, s_train, model=model
-                        )
-                    else:
-                        # Other mitigations return modified data/weights
-                        X_train_mit, y_train_mit, sample_weights = mitigation_fn(X_train, y_train, s_train)
-
-                    # Fit model on mitigated training data with optional sample weights
-                    # (unless using fairness_penalty which returns a pre-fitted model)
-                    if mitigated_model is None:
-                        model.fit(X_train_mit, y_train_mit, sample_weight=sample_weights,
-                                 mitigation=mitigation_name)
-                    else:
-                        model = mitigated_model
-
-                    # Evaluate on (same) bootstrap evaluation set
+                    # PREDICT ONLY (no refitting)
                     y_proba = model.predict_proba(X_eval)[:, 1]
                     y_pred = (y_proba >= THRESHOLD).astype(int)
 
@@ -216,7 +246,6 @@ for iter_idx in tqdm(range(N_BOOTSTRAP_ITERATIONS), desc="Bootstrap iterations",
                     n_alarms = y_pred.sum()
 
                     # Store results
-                    key = (model_name, mitigation_name, perturbation_name)
                     results[key]['overall_physionet_utility'].append(fairness['overall_physionet_utility'])
                     results[key]['disparate_impact'].append(fairness['disparate_impact'])
                     results[key]['equal_opportunity'].append(fairness['equal_opportunity'])
