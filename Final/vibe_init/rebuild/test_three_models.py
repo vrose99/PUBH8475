@@ -149,16 +149,24 @@ for iter_idx in tqdm(range(N_BOOTSTRAP_ITERATIONS), desc="Bootstrap iterations",
     gender = boot_df["Gender"].values
     hours_until_sepsis = boot_df["hours_until_sepsis"].values if "hours_until_sepsis" in boot_df.columns else np.full(len(boot_df), np.nan)
 
-    # For each model-mitigation-perturbation combination
-    for model_name in MODEL_NAMES:
-        for mitigation_name in MITIGATION_NAMES:
-            for perturbation_name in PERTURBATION_NAMES:
-                try:
-                    # Get perturbed training data
-                    train_df_variant = train_df_perturbed[perturbation_name]
-                    X_train, y_train = extract_Xy(train_df_variant, "SepsisLabel")
-                    s_train = train_df_variant["Gender"].values
+    # Pre-extract training data for each perturbation (avoid redundant extraction)
+    train_data_by_perturbation = {}
+    for perturbation_name in PERTURBATION_NAMES:
+        train_df_variant = train_df_perturbed[perturbation_name]
+        X_train, y_train = extract_Xy(train_df_variant, "SepsisLabel")
+        s_train = train_df_variant["Gender"].values
+        train_data_by_perturbation[perturbation_name] = (X_train, y_train, s_train)
 
+    # Pre-compile mitigation functions
+    mitigation_fns = {name: get_mitigation(name) for name in MITIGATION_NAMES}
+
+    # For each model-perturbation-mitigation combination (reordered for cache locality)
+    for model_name in MODEL_NAMES:
+        for perturbation_name in PERTURBATION_NAMES:
+            X_train, y_train, s_train = train_data_by_perturbation[perturbation_name]
+
+            for mitigation_name in MITIGATION_NAMES:
+                try:
                     # Create fresh model instance
                     if model_name == "LogisticGLM":
                         model = LogisticGLM(C=0.1)
@@ -170,7 +178,7 @@ for iter_idx in tqdm(range(N_BOOTSTRAP_ITERATIONS), desc="Bootstrap iterations",
                         raise ValueError(f"Unknown model: {model_name}")
 
                     # Apply mitigation to training data
-                    mitigation_fn = get_mitigation(mitigation_name)
+                    mitigation_fn = mitigation_fns[mitigation_name]
                     mitigated_model = None
 
                     if mitigation_name == 'fairness_penalty':

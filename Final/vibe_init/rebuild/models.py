@@ -420,7 +420,7 @@ class GRUModel(BaseModel):
         return self
 
     def predict_proba(self, X):
-        """Return probability of sepsis (column 1)."""
+        """Return probability of sepsis (column 1). Vectorized for speed."""
         if not self._is_fit:
             raise ValueError("Model not fit. Call fit() first.")
 
@@ -429,23 +429,11 @@ class GRUModel(BaseModel):
         X = self.scaler.transform(X)
 
         self.gru.eval()
-        probs = []
-
         with torch.no_grad():
-            for start in range(0, len(X), self.batch_size):
-                end = min(start + self.batch_size, len(X))
-                X_batch = torch.tensor(
-                    X[start:end],
-                    dtype=torch.float32,
-                    device=self._device
-                ).unsqueeze(1)
+            X_tensor = torch.tensor(X, dtype=torch.float32, device=self._device).unsqueeze(1)
+            logits = self.gru(X_tensor)
+            proba_pos = torch.sigmoid(logits).squeeze(-1).cpu().numpy()
 
-                # Network returns logits; apply sigmoid to get probabilities
-                logits = self.gru(X_batch)
-                proba_batch = torch.sigmoid(logits).cpu().numpy()
-                probs.append(proba_batch)
-
-        proba_pos = np.concatenate(probs)
         proba_neg = 1 - proba_pos
         return np.column_stack([proba_neg, proba_pos])
 
