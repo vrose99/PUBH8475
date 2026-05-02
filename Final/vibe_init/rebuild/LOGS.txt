@@ -1,23 +1,3 @@
-time python test_three_models.py
-
-====================================================================================================
-THREE-MODEL × FOUR-MITIGATION × THREE-PERTURBATION BOOTSTRAP EVALUATION
-====================================================================================================
-Config:
-  Train size:        300 patients
-  Threshold:         0.4
-  Bootstrap pool:    1000 patients
-  Bootstrap eval:    200 patients per iteration
-  Iterations:        10
-  Models:            ['LogisticGLM', 'XGBoost', 'GRU']
-  Mitigations:       ['none', 'reweighting', 'smote', 'threshold_optimization']
-  Perturbations:     ['D0', 'D1A', 'D2A']
-  Total combinations: 3 × 4 × 3 = 36
-
-Loading data...
-WARNING:data_loader:Dataset directory not found: ../data/physionet_sepsis/training_setB/training
-  20,336 patients, 790,215 rows
-
 Training data:
   11682 rows, 43 features
   300 patients
@@ -25,377 +5,45 @@ Training data:
 
 Building dataset perturbations...
   D0 (original):      11682 rows, 300 patients
-  D1A (row removal):  11682 rows, 300 patients
+  D1A (row removal):  5967 rows, 300 patients
   D2A (MAR):          11682 rows, 300 patients
 
 Bootstrap evaluation (threshold=0.4):
 Model           Mitigation           Perturbation Iter  PhysioNet_U  Disp_Impact  Eq_Opp      
 ------------------------------------------------------------------------------------------------------------------------
 Bootstrap iterations:   0%|                                                                                                                                          | 0/10 [00:00<?, ?iteration/s]LogisticGLM     none                 D0           1     0.4213       0.8714       -0.1107     
-LogisticGLM     none                 D1A          1     0.4213       0.8714       -0.1107     
-LogisticGLM     none                 D2A          1     0.4213       0.8714       -0.1107     
+LogisticGLM     none                 D1A          1     0.4276       0.8890       -0.1252     
+LogisticGLM     none                 D2A          1     0.4133       0.8634       -0.0817     
 LogisticGLM     reweighting          D0           1     0.4213       0.8714       -0.1107     
-LogisticGLM     reweighting          D1A          1     0.4213       0.8714       -0.1107     
-LogisticGLM     reweighting          D2A          1     0.4213       0.8714       -0.1107     
+LogisticGLM     reweighting          D1A          1     0.4276       0.8890       -0.1252     
+LogisticGLM     reweighting          D2A          1     0.4133       0.8634       -0.0817     
 LogisticGLM     smote                D0           1     0.4080       0.8874       -0.0817     
-LogisticGLM     smote                D1A          1     0.4080       0.8874       -0.0817     
-LogisticGLM     smote                D2A          1     0.4080       0.8874       -0.0817     
+LogisticGLM     smote                D1A          1     0.4207       0.8751       -0.1107     
+LogisticGLM     smote                D2A          1     0.4077       0.8864       -0.0542     
 LogisticGLM     threshold_optimization D0           1     0.4213       0.8714       -0.1107     
-LogisticGLM     threshold_optimization D1A          1     0.4213       0.8714       -0.1107     
-LogisticGLM     threshold_optimization D2A          1     0.4213       0.8714       -0.1107     
+LogisticGLM     threshold_optimization D1A          1     0.4276       0.8890       -0.1252     
+LogisticGLM     threshold_optimization D2A          1     0.4133       0.8634       -0.0817     
 XGBoost         none                 D0           1     0.2492       0.8544       -0.0751     
-XGBoost         none                 D1A          1     0.2492       0.8544       -0.0751     
-XGBoost         none                 D2A          1     0.2492       0.8544       -0.0751     
+XGBoost         none                 D1A          1     0.2504       0.9332       -0.1171     
+XGBoost         none                 D2A          1     0.2402       0.8448       -0.1156     
 XGBoost         reweighting          D0           1     0.2492       0.8544       -0.0751     
-XGBoost         reweighting          D1A          1     0.2492       0.8544       -0.0751     
-XGBoost         reweighting          D2A          1     0.2492       0.8544       -0.0751     
+XGBoost         reweighting          D1A          1     0.2504       0.9332       -0.1171     
+XGBoost         reweighting          D2A          1     0.2402       0.8448       -0.1156     
 XGBoost         smote                D0           1     0.2807       0.8620       -0.1765     
-XGBoost         smote                D1A          1     0.2807       0.8620       -0.1765     
-XGBoost         smote                D2A          1     0.2807       0.8620       -0.1765     
+XGBoost         smote                D1A          1     0.2871       0.8532       -0.1071     
+XGBoost         smote                D2A          1     0.2505       0.8544       -0.1316     
 XGBoost         threshold_optimization D0           1     0.2492       0.8544       -0.0751     
-XGBoost         threshold_optimization D1A          1     0.2492       0.8544       -0.0751     
-XGBoost         threshold_optimization D2A          1     0.2492       0.8544       -0.0751     
+XGBoost         threshold_optimization D1A          1     0.2504       0.9332       -0.1171     
+XGBoost         threshold_optimization D2A          1     0.2402       0.8448       -0.1156     
 GRU             none                 D0           1     0.2999       0.8017       -0.1506     
-GRU             none                 D1A          1     0.2999       0.8017       -0.1506     
-GRU             none                 D2A          1     0.2999       0.8017       -0.1506     
+GRU             none                 D1A          1     0.2933       0.8244       -0.0956     
+GRU             none                 D2A          1     0.3001       0.7900       -0.1361     
 GRU             reweighting          D0           1     0.2999       0.8017       -0.1506     
-GRU             reweighting          D1A          1     0.2999       0.8017       -0.1506     
-GRU             reweighting          D2A          1     0.2999       0.8017       -0.1506     
+GRU             reweighting          D1A          1     0.2933       0.8244       -0.0956     
+GRU             reweighting          D2A          1     0.3001       0.7900       -0.1361     
 GRU             smote                D0           1     0.3194       0.8787       -0.1376     
-GRU             smote                D1A          1     0.3194       0.8787       -0.1376     
-GRU             smote                D2A          1     0.3194       0.8787       -0.1376     
+GRU             smote                D1A          1     0.3788       0.9039       -0.1191     
+GRU             smote                D2A          1     0.3269       0.8606       -0.1521     
 GRU             threshold_optimization D0           1     0.2999       0.8017       -0.1506     
-GRU             threshold_optimization D1A          1     0.2999       0.8017       -0.1506     
-GRU             threshold_optimization D2A          1     0.2999       0.8017       -0.1506  
-
-
-DIFFERENT RUN:
-
-
-========================================================================================================================
-SUMMARY STATISTICS
-========================================================================================================================
-
-LogisticGLM:
-  Mitigation           Perturbation Metric                                   Mean       Std        Min        Max       
-  ----------------------------------------------------------------------------------------------------
-  none                 D0           PhysioNet Utility (ideal=1.0)            0.6835     0.1280     0.5063     0.8787    
-  none                 D0           Disparate Impact (ideal=1.0)             0.9744     0.1210     0.7822     1.1076    
-  none                 D0           Equal Opportunity (ideal=0.0)            -0.0992    0.1826     -0.4500    0.0434    
-  none                 D0           Utility threshold (>0.15): ✓ (mean=0.6835)
-  none                 D1A          PhysioNet Utility (ideal=1.0)            0.6835     0.1280     0.5063     0.8787    
-  none                 D1A          Disparate Impact (ideal=1.0)             0.9744     0.1210     0.7822     1.1076    
-  none                 D1A          Equal Opportunity (ideal=0.0)            -0.0992    0.1826     -0.4500    0.0434    
-  none                 D1A          Utility threshold (>0.15): ✓ (mean=0.6835)
-  none                 D2A          PhysioNet Utility (ideal=1.0)            0.6835     0.1280     0.5063     0.8787    
-  none                 D2A          Disparate Impact (ideal=1.0)             0.9744     0.1210     0.7822     1.1076    
-  none                 D2A          Equal Opportunity (ideal=0.0)            -0.0992    0.1826     -0.4500    0.0434    
-  none                 D2A          Utility threshold (>0.15): ✓ (mean=0.6835)
-  reweighting          D0           PhysioNet Utility (ideal=1.0)            0.6835     0.1280     0.5063     0.8787    
-  reweighting          D0           Disparate Impact (ideal=1.0)             0.9744     0.1210     0.7822     1.1076    
-  reweighting          D0           Equal Opportunity (ideal=0.0)            -0.0992    0.1826     -0.4500    0.0434    
-  reweighting          D0           Utility threshold (>0.15): ✓ (mean=0.6835)
-  reweighting          D1A          PhysioNet Utility (ideal=1.0)            0.6835     0.1280     0.5063     0.8787    
-  reweighting          D1A          Disparate Impact (ideal=1.0)             0.9744     0.1210     0.7822     1.1076    
-  reweighting          D1A          Equal Opportunity (ideal=0.0)            -0.0992    0.1826     -0.4500    0.0434    
-  reweighting          D1A          Utility threshold (>0.15): ✓ (mean=0.6835)
-  reweighting          D2A          PhysioNet Utility (ideal=1.0)            0.6835     0.1280     0.5063     0.8787    
-  reweighting          D2A          Disparate Impact (ideal=1.0)             0.9744     0.1210     0.7822     1.1076    
-  reweighting          D2A          Equal Opportunity (ideal=0.0)            -0.0992    0.1826     -0.4500    0.0434    
-  reweighting          D2A          Utility threshold (>0.15): ✓ (mean=0.6835)
-  smote                D0           PhysioNet Utility (ideal=1.0)            0.6110     0.1475     0.3764     0.7855    
-  smote                D0           Disparate Impact (ideal=1.0)             1.0497     0.1191     0.8562     1.1971    
-  smote                D0           Equal Opportunity (ideal=0.0)            -0.1835    0.1905     -0.5500    0.0053    
-  smote                D0           Utility threshold (>0.15): ✓ (mean=0.6110)
-  smote                D1A          PhysioNet Utility (ideal=1.0)            0.6110     0.1475     0.3764     0.7855    
-  smote                D1A          Disparate Impact (ideal=1.0)             1.0497     0.1191     0.8562     1.1971    
-  smote                D1A          Equal Opportunity (ideal=0.0)            -0.1835    0.1905     -0.5500    0.0053    
-  smote                D1A          Utility threshold (>0.15): ✓ (mean=0.6110)
-  smote                D2A          PhysioNet Utility (ideal=1.0)            0.6110     0.1475     0.3764     0.7855    
-  smote                D2A          Disparate Impact (ideal=1.0)             1.0497     0.1191     0.8562     1.1971    
-  smote                D2A          Equal Opportunity (ideal=0.0)            -0.1835    0.1905     -0.5500    0.0053    
-  smote                D2A          Utility threshold (>0.15): ✓ (mean=0.6110)
-  threshold_optimization D0           PhysioNet Utility (ideal=1.0)            0.6835     0.1280     0.5063     0.8787    
-  threshold_optimization D0           Disparate Impact (ideal=1.0)             0.9744     0.1210     0.7822     1.1076    
-  threshold_optimization D0           Equal Opportunity (ideal=0.0)            -0.0992    0.1826     -0.4500    0.0434    
-  threshold_optimization D0           Utility threshold (>0.15): ✓ (mean=0.6835)
-  threshold_optimization D1A          PhysioNet Utility (ideal=1.0)            0.6835     0.1280     0.5063     0.8787    
-  threshold_optimization D1A          Disparate Impact (ideal=1.0)             0.9744     0.1210     0.7822     1.1076    
-  threshold_optimization D1A          Equal Opportunity (ideal=0.0)            -0.0992    0.1826     -0.4500    0.0434    
-  threshold_optimization D1A          Utility threshold (>0.15): ✓ (mean=0.6835)
-  threshold_optimization D2A          PhysioNet Utility (ideal=1.0)            0.6835     0.1280     0.5063     0.8787    
-  threshold_optimization D2A          Disparate Impact (ideal=1.0)             0.9744     0.1210     0.7822     1.1076    
-  threshold_optimization D2A          Equal Opportunity (ideal=0.0)            -0.0992    0.1826     -0.4500    0.0434    
-  threshold_optimization D2A          Utility threshold (>0.15): ✓ (mean=0.6835)
-
-XGBoost:
-  Mitigation           Perturbation Metric                                   Mean       Std        Min        Max       
-  ----------------------------------------------------------------------------------------------------
-  none                 D0           PhysioNet Utility (ideal=1.0)            0.3807     0.0469     0.3238     0.4400    
-  none                 D0           Disparate Impact (ideal=1.0)             1.0350     0.1503     0.8701     1.3011    
-  none                 D0           Equal Opportunity (ideal=0.0)            -0.0212    0.3986     -0.5316    0.4154    
-  none                 D0           Utility threshold (>0.15): ✓ (mean=0.3807)
-  none                 D1A          PhysioNet Utility (ideal=1.0)            0.3807     0.0469     0.3238     0.4400    
-  none                 D1A          Disparate Impact (ideal=1.0)             1.0350     0.1503     0.8701     1.3011    
-  none                 D1A          Equal Opportunity (ideal=0.0)            -0.0212    0.3986     -0.5316    0.4154    
-  none                 D1A          Utility threshold (>0.15): ✓ (mean=0.3807)
-  none                 D2A          PhysioNet Utility (ideal=1.0)            0.3807     0.0469     0.3238     0.4400    
-  none                 D2A          Disparate Impact (ideal=1.0)             1.0350     0.1503     0.8701     1.3011    
-  none                 D2A          Equal Opportunity (ideal=0.0)            -0.0212    0.3986     -0.5316    0.4154    
-  none                 D2A          Utility threshold (>0.15): ✓ (mean=0.3807)
-  reweighting          D0           PhysioNet Utility (ideal=1.0)            0.3807     0.0469     0.3238     0.4400    
-  reweighting          D0           Disparate Impact (ideal=1.0)             1.0350     0.1503     0.8701     1.3011    
-  reweighting          D0           Equal Opportunity (ideal=0.0)            -0.0212    0.3986     -0.5316    0.4154    
-  reweighting          D0           Utility threshold (>0.15): ✓ (mean=0.3807)
-  reweighting          D1A          PhysioNet Utility (ideal=1.0)            0.3807     0.0469     0.3238     0.4400    
-  reweighting          D1A          Disparate Impact (ideal=1.0)             1.0350     0.1503     0.8701     1.3011    
-  reweighting          D1A          Equal Opportunity (ideal=0.0)            -0.0212    0.3986     -0.5316    0.4154    
-  reweighting          D1A          Utility threshold (>0.15): ✓ (mean=0.3807)
-  reweighting          D2A          PhysioNet Utility (ideal=1.0)            0.3807     0.0469     0.3238     0.4400    
-  reweighting          D2A          Disparate Impact (ideal=1.0)             1.0350     0.1503     0.8701     1.3011    
-  reweighting          D2A          Equal Opportunity (ideal=0.0)            -0.0212    0.3986     -0.5316    0.4154    
-  reweighting          D2A          Utility threshold (>0.15): ✓ (mean=0.3807)
-  smote                D0           PhysioNet Utility (ideal=1.0)            0.3213     0.1015     0.1528     0.4405    
-  smote                D0           Disparate Impact (ideal=1.0)             1.0189     0.1351     0.8870     1.2798    
-  smote                D0           Equal Opportunity (ideal=0.0)            0.0065     0.2496     -0.4094    0.2667    
-  smote                D0           Utility threshold (>0.15): ✓ (mean=0.3213)
-  smote                D1A          PhysioNet Utility (ideal=1.0)            0.3213     0.1015     0.1528     0.4405    
-  smote                D1A          Disparate Impact (ideal=1.0)             1.0189     0.1351     0.8870     1.2798    
-  smote                D1A          Equal Opportunity (ideal=0.0)            0.0065     0.2496     -0.4094    0.2667    
-  smote                D1A          Utility threshold (>0.15): ✓ (mean=0.3213)
-  smote                D2A          PhysioNet Utility (ideal=1.0)            0.3213     0.1015     0.1528     0.4405    
-  smote                D2A          Disparate Impact (ideal=1.0)             1.0189     0.1351     0.8870     1.2798    
-  smote                D2A          Equal Opportunity (ideal=0.0)            0.0065     0.2496     -0.4094    0.2667    
-  smote                D2A          Utility threshold (>0.15): ✓ (mean=0.3213)
-  threshold_optimization D0           PhysioNet Utility (ideal=1.0)            0.3807     0.0469     0.3238     0.4400    
-  threshold_optimization D0           Disparate Impact (ideal=1.0)             1.0350     0.1503     0.8701     1.3011    
-  threshold_optimization D0           Equal Opportunity (ideal=0.0)            -0.0212    0.3986     -0.5316    0.4154    
-  threshold_optimization D0           Utility threshold (>0.15): ✓ (mean=0.3807)
-  threshold_optimization D1A          PhysioNet Utility (ideal=1.0)            0.3807     0.0469     0.3238     0.4400    
-  threshold_optimization D1A          Disparate Impact (ideal=1.0)             1.0350     0.1503     0.8701     1.3011    
-  threshold_optimization D1A          Equal Opportunity (ideal=0.0)            -0.0212    0.3986     -0.5316    0.4154    
-  threshold_optimization D1A          Utility threshold (>0.15): ✓ (mean=0.3807)
-  threshold_optimization D2A          PhysioNet Utility (ideal=1.0)            0.3807     0.0469     0.3238     0.4400    
-  threshold_optimization D2A          Disparate Impact (ideal=1.0)             1.0350     0.1503     0.8701     1.3011    
-  threshold_optimization D2A          Equal Opportunity (ideal=0.0)            -0.0212    0.3986     -0.5316    0.4154    
-  threshold_optimization D2A          Utility threshold (>0.15): ✓ (mean=0.3807)
-
-GRU:
-  Mitigation           Perturbation Metric                                   Mean       Std        Min        Max       
-  ----------------------------------------------------------------------------------------------------
-  none                 D0           PhysioNet Utility (ideal=1.0)            0.5831     0.1339     0.4601     0.8439    
-  none                 D0           Disparate Impact (ideal=1.0)             1.0018     0.1452     0.8176     1.1603    
-  none                 D0           Equal Opportunity (ideal=0.0)            -0.0824    0.0984     -0.1778    0.0788    
-  none                 D0           Utility threshold (>0.15): ✓ (mean=0.5831)
-  none                 D1A          PhysioNet Utility (ideal=1.0)            0.5831     0.1339     0.4601     0.8439    
-  none                 D1A          Disparate Impact (ideal=1.0)             1.0018     0.1452     0.8176     1.1603    
-  none                 D1A          Equal Opportunity (ideal=0.0)            -0.0824    0.0984     -0.1778    0.0788    
-  none                 D1A          Utility threshold (>0.15): ✓ (mean=0.5831)
-  none                 D2A          PhysioNet Utility (ideal=1.0)            0.5831     0.1339     0.4601     0.8439    
-  none                 D2A          Disparate Impact (ideal=1.0)             1.0018     0.1452     0.8176     1.1603    
-  none                 D2A          Equal Opportunity (ideal=0.0)            -0.0824    0.0984     -0.1778    0.0788    
-  none                 D2A          Utility threshold (>0.15): ✓ (mean=0.5831)
-  reweighting          D0           PhysioNet Utility (ideal=1.0)            0.5831     0.1339     0.4601     0.8439    
-  reweighting          D0           Disparate Impact (ideal=1.0)             1.0018     0.1452     0.8176     1.1603    
-  reweighting          D0           Equal Opportunity (ideal=0.0)            -0.0824    0.0984     -0.1778    0.0788    
-  reweighting          D0           Utility threshold (>0.15): ✓ (mean=0.5831)
-  reweighting          D1A          PhysioNet Utility (ideal=1.0)            0.5831     0.1339     0.4601     0.8439    
-  reweighting          D1A          Disparate Impact (ideal=1.0)             1.0018     0.1452     0.8176     1.1603    
-  reweighting          D1A          Equal Opportunity (ideal=0.0)            -0.0824    0.0984     -0.1778    0.0788    
-  reweighting          D1A          Utility threshold (>0.15): ✓ (mean=0.5831)
-  reweighting          D2A          PhysioNet Utility (ideal=1.0)            0.5831     0.1339     0.4601     0.8439    
-  reweighting          D2A          Disparate Impact (ideal=1.0)             1.0018     0.1452     0.8176     1.1603    
-  reweighting          D2A          Equal Opportunity (ideal=0.0)            -0.0824    0.0984     -0.1778    0.0788    
-  reweighting          D2A          Utility threshold (>0.15): ✓ (mean=0.5831)
-  smote                D0           PhysioNet Utility (ideal=1.0)            0.5737     0.1064     0.4038     0.7308    
-  smote                D0           Disparate Impact (ideal=1.0)             1.0777     0.1289     0.9011     1.2124    
-  smote                D0           Equal Opportunity (ideal=0.0)            -0.0467    0.0993     -0.2389    0.0368    
-  smote                D0           Utility threshold (>0.15): ✓ (mean=0.5737)
-  smote                D1A          PhysioNet Utility (ideal=1.0)            0.5737     0.1064     0.4038     0.7308    
-  smote                D1A          Disparate Impact (ideal=1.0)             1.0777     0.1289     0.9011     1.2124    
-  smote                D1A          Equal Opportunity (ideal=0.0)            -0.0467    0.0993     -0.2389    0.0368    
-  smote                D1A          Utility threshold (>0.15): ✓ (mean=0.5737)
-  smote                D2A          PhysioNet Utility (ideal=1.0)            0.5737     0.1064     0.4038     0.7308    
-  smote                D2A          Disparate Impact (ideal=1.0)             1.0777     0.1289     0.9011     1.2124    
-  smote                D2A          Equal Opportunity (ideal=0.0)            -0.0467    0.0993     -0.2389    0.0368    
-  smote                D2A          Utility threshold (>0.15): ✓ (mean=0.5737)
-  threshold_optimization D0           PhysioNet Utility (ideal=1.0)            0.5831     0.1339     0.4601     0.8439    
-  threshold_optimization D0           Disparate Impact (ideal=1.0)             1.0018     0.1452     0.8176     1.1603    
-  threshold_optimization D0           Equal Opportunity (ideal=0.0)            -0.0824    0.0984     -0.1778    0.0788    
-  threshold_optimization D0           Utility threshold (>0.15): ✓ (mean=0.5831)
-  threshold_optimization D1A          PhysioNet Utility (ideal=1.0)            0.5831     0.1339     0.4601     0.8439    
-  threshold_optimization D1A          Disparate Impact (ideal=1.0)             1.0018     0.1452     0.8176     1.1603    
-  threshold_optimization D1A          Equal Opportunity (ideal=0.0)            -0.0824    0.0984     -0.1778    0.0788    
-  threshold_optimization D1A          Utility threshold (>0.15): ✓ (mean=0.5831)
-  threshold_optimization D2A          PhysioNet Utility (ideal=1.0)            0.5831     0.1339     0.4601     0.8439    
-  threshold_optimization D2A          Disparate Impact (ideal=1.0)             1.0018     0.1452     0.8176     1.1603    
-  threshold_optimization D2A          Equal Opportunity (ideal=0.0)            -0.0824    0.0984     -0.1778    0.0788    
-  threshold_optimization D2A          Utility threshold (>0.15): ✓ (mean=0.5831)
-
-========================================================================================================================
-SUMMARY STATISTICS
-========================================================================================================================
-
-LogisticGLM:
-  Mitigation           Perturbation Metric                                   Mean       Std        Min        Max       
-  ----------------------------------------------------------------------------------------------------
-  none                 D0           PhysioNet Utility (ideal=1.0)            0.5361     0.0254     0.5060     0.5795    
-  none                 D0           Disparate Impact (ideal=1.0)             0.8878     0.1412     0.7488     1.1255    
-  none                 D0           Equal Opportunity (ideal=0.0)            -0.0378    0.3224     -0.5088    0.4641    
-  none                 D0           Utility threshold (>0.15): ✓ (mean=0.5361)
-  none                 D1A          PhysioNet Utility (ideal=1.0)            0.5361     0.0254     0.5060     0.5795    
-  none                 D1A          Disparate Impact (ideal=1.0)             0.8878     0.1412     0.7488     1.1255    
-  none                 D1A          Equal Opportunity (ideal=0.0)            -0.0378    0.3224     -0.5088    0.4641    
-  none                 D1A          Utility threshold (>0.15): ✓ (mean=0.5361)
-  none                 D2A          PhysioNet Utility (ideal=1.0)            0.5361     0.0254     0.5060     0.5795    
-  none                 D2A          Disparate Impact (ideal=1.0)             0.8878     0.1412     0.7488     1.1255    
-  none                 D2A          Equal Opportunity (ideal=0.0)            -0.0378    0.3224     -0.5088    0.4641    
-  none                 D2A          Utility threshold (>0.15): ✓ (mean=0.5361)
-  reweighting          D0           PhysioNet Utility (ideal=1.0)            0.5361     0.0254     0.5060     0.5795    
-  reweighting          D0           Disparate Impact (ideal=1.0)             0.8878     0.1412     0.7488     1.1255    
-  reweighting          D0           Equal Opportunity (ideal=0.0)            -0.0378    0.3224     -0.5088    0.4641    
-  reweighting          D0           Utility threshold (>0.15): ✓ (mean=0.5361)
-  reweighting          D1A          PhysioNet Utility (ideal=1.0)            0.5361     0.0254     0.5060     0.5795    
-  reweighting          D1A          Disparate Impact (ideal=1.0)             0.8878     0.1412     0.7488     1.1255    
-  reweighting          D1A          Equal Opportunity (ideal=0.0)            -0.0378    0.3224     -0.5088    0.4641    
-  reweighting          D1A          Utility threshold (>0.15): ✓ (mean=0.5361)
-  reweighting          D2A          PhysioNet Utility (ideal=1.0)            0.5361     0.0254     0.5060     0.5795    
-  reweighting          D2A          Disparate Impact (ideal=1.0)             0.8878     0.1412     0.7488     1.1255    
-  reweighting          D2A          Equal Opportunity (ideal=0.0)            -0.0378    0.3224     -0.5088    0.4641    
-  reweighting          D2A          Utility threshold (>0.15): ✓ (mean=0.5361)
-  smote                D0           PhysioNet Utility (ideal=1.0)            0.5443     0.0280     0.5088     0.5926    
-  smote                D0           Disparate Impact (ideal=1.0)             0.8781     0.1355     0.7696     1.1081    
-  smote                D0           Equal Opportunity (ideal=0.0)            -0.0306    0.3265     -0.5614    0.4445    
-  smote                D0           Utility threshold (>0.15): ✓ (mean=0.5443)
-  smote                D1A          PhysioNet Utility (ideal=1.0)            0.5443     0.0280     0.5088     0.5926    
-  smote                D1A          Disparate Impact (ideal=1.0)             0.8781     0.1355     0.7696     1.1081    
-  smote                D1A          Equal Opportunity (ideal=0.0)            -0.0306    0.3265     -0.5614    0.4445    
-  smote                D1A          Utility threshold (>0.15): ✓ (mean=0.5443)
-  smote                D2A          PhysioNet Utility (ideal=1.0)            0.5443     0.0280     0.5088     0.5926    
-  smote                D2A          Disparate Impact (ideal=1.0)             0.8781     0.1355     0.7696     1.1081    
-  smote                D2A          Equal Opportunity (ideal=0.0)            -0.0306    0.3265     -0.5614    0.4445    
-  smote                D2A          Utility threshold (>0.15): ✓ (mean=0.5443)
-  threshold_optimization D0           PhysioNet Utility (ideal=1.0)            0.5361     0.0254     0.5060     0.5795    
-  threshold_optimization D0           Disparate Impact (ideal=1.0)             0.8878     0.1412     0.7488     1.1255    
-  threshold_optimization D0           Equal Opportunity (ideal=0.0)            -0.0378    0.3224     -0.5088    0.4641    
-  threshold_optimization D0           Utility threshold (>0.15): ✓ (mean=0.5361)
-  threshold_optimization D1A          PhysioNet Utility (ideal=1.0)            0.5361     0.0254     0.5060     0.5795    
-  threshold_optimization D1A          Disparate Impact (ideal=1.0)             0.8878     0.1412     0.7488     1.1255    
-  threshold_optimization D1A          Equal Opportunity (ideal=0.0)            -0.0378    0.3224     -0.5088    0.4641    
-  threshold_optimization D1A          Utility threshold (>0.15): ✓ (mean=0.5361)
-  threshold_optimization D2A          PhysioNet Utility (ideal=1.0)            0.5361     0.0254     0.5060     0.5795    
-  threshold_optimization D2A          Disparate Impact (ideal=1.0)             0.8878     0.1412     0.7488     1.1255    
-  threshold_optimization D2A          Equal Opportunity (ideal=0.0)            -0.0378    0.3224     -0.5088    0.4641    
-  threshold_optimization D2A          Utility threshold (>0.15): ✓ (mean=0.5361)
-
-XGBoost:
-  Mitigation           Perturbation Metric                                   Mean       Std        Min        Max       
-  ----------------------------------------------------------------------------------------------------
-  none                 D0           PhysioNet Utility (ideal=1.0)            0.2581     0.0759     0.1229     0.3576    
-  none                 D0           Disparate Impact (ideal=1.0)             1.1323     0.5057     0.5681     1.9796    
-  none                 D0           Equal Opportunity (ideal=0.0)            0.0882     0.2798     -0.3099    0.3178    
-  none                 D0           Utility threshold (>0.15): ✓ (mean=0.2581)
-  none                 D1A          PhysioNet Utility (ideal=1.0)            0.2581     0.0759     0.1229     0.3576    
-  none                 D1A          Disparate Impact (ideal=1.0)             1.1323     0.5057     0.5681     1.9796    
-  none                 D1A          Equal Opportunity (ideal=0.0)            0.0882     0.2798     -0.3099    0.3178    
-  none                 D1A          Utility threshold (>0.15): ✓ (mean=0.2581)
-  none                 D2A          PhysioNet Utility (ideal=1.0)            0.2581     0.0759     0.1229     0.3576    
-  none                 D2A          Disparate Impact (ideal=1.0)             1.1323     0.5057     0.5681     1.9796    
-  none                 D2A          Equal Opportunity (ideal=0.0)            0.0882     0.2798     -0.3099    0.3178    
-  none                 D2A          Utility threshold (>0.15): ✓ (mean=0.2581)
-  reweighting          D0           PhysioNet Utility (ideal=1.0)            0.2581     0.0759     0.1229     0.3576    
-  reweighting          D0           Disparate Impact (ideal=1.0)             1.1323     0.5057     0.5681     1.9796    
-  reweighting          D0           Equal Opportunity (ideal=0.0)            0.0882     0.2798     -0.3099    0.3178    
-  reweighting          D0           Utility threshold (>0.15): ✓ (mean=0.2581)
-  reweighting          D1A          PhysioNet Utility (ideal=1.0)            0.2581     0.0759     0.1229     0.3576    
-  reweighting          D1A          Disparate Impact (ideal=1.0)             1.1323     0.5057     0.5681     1.9796    
-  reweighting          D1A          Equal Opportunity (ideal=0.0)            0.0882     0.2798     -0.3099    0.3178    
-  reweighting          D1A          Utility threshold (>0.15): ✓ (mean=0.2581)
-  reweighting          D2A          PhysioNet Utility (ideal=1.0)            0.2581     0.0759     0.1229     0.3576    
-  reweighting          D2A          Disparate Impact (ideal=1.0)             1.1323     0.5057     0.5681     1.9796    
-  reweighting          D2A          Equal Opportunity (ideal=0.0)            0.0882     0.2798     -0.3099    0.3178    
-  reweighting          D2A          Utility threshold (>0.15): ✓ (mean=0.2581)
-  smote                D0           PhysioNet Utility (ideal=1.0)            0.2532     0.1221     0.1024     0.4496    
-  smote                D0           Disparate Impact (ideal=1.0)             0.9730     0.3647     0.5935     1.5371    
-  smote                D0           Equal Opportunity (ideal=0.0)            0.0327     0.2035     -0.2076    0.3158    
-  smote                D0           Utility threshold (>0.15): ✓ (mean=0.2532)
-  smote                D1A          PhysioNet Utility (ideal=1.0)            0.2532     0.1221     0.1024     0.4496    
-  smote                D1A          Disparate Impact (ideal=1.0)             0.9730     0.3647     0.5935     1.5371    
-  smote                D1A          Equal Opportunity (ideal=0.0)            0.0327     0.2035     -0.2076    0.3158    
-  smote                D1A          Utility threshold (>0.15): ✓ (mean=0.2532)
-  smote                D2A          PhysioNet Utility (ideal=1.0)            0.2532     0.1221     0.1024     0.4496    
-  smote                D2A          Disparate Impact (ideal=1.0)             0.9730     0.3647     0.5935     1.5371    
-  smote                D2A          Equal Opportunity (ideal=0.0)            0.0327     0.2035     -0.2076    0.3158    
-  smote                D2A          Utility threshold (>0.15): ✓ (mean=0.2532)
-  threshold_optimization D0           PhysioNet Utility (ideal=1.0)            0.2581     0.0759     0.1229     0.3576    
-  threshold_optimization D0           Disparate Impact (ideal=1.0)             1.1323     0.5057     0.5681     1.9796    
-  threshold_optimization D0           Equal Opportunity (ideal=0.0)            0.0882     0.2798     -0.3099    0.3178    
-  threshold_optimization D0           Utility threshold (>0.15): ✓ (mean=0.2581)
-  threshold_optimization D1A          PhysioNet Utility (ideal=1.0)            0.2581     0.0759     0.1229     0.3576    
-  threshold_optimization D1A          Disparate Impact (ideal=1.0)             1.1323     0.5057     0.5681     1.9796    
-  threshold_optimization D1A          Equal Opportunity (ideal=0.0)            0.0882     0.2798     -0.3099    0.3178    
-  threshold_optimization D1A          Utility threshold (>0.15): ✓ (mean=0.2581)
-  threshold_optimization D2A          PhysioNet Utility (ideal=1.0)            0.2581     0.0759     0.1229     0.3576    
-  threshold_optimization D2A          Disparate Impact (ideal=1.0)             1.1323     0.5057     0.5681     1.9796    
-  threshold_optimization D2A          Equal Opportunity (ideal=0.0)            0.0882     0.2798     -0.3099    0.3178    
-  threshold_optimization D2A          Utility threshold (>0.15): ✓ (mean=0.2581)
-
-GRU:
-  Mitigation           Perturbation Metric                                   Mean       Std        Min        Max       
-  ----------------------------------------------------------------------------------------------------
-  none                 D0           PhysioNet Utility (ideal=1.0)            0.4985     0.0384     0.4552     0.5567    
-  none                 D0           Disparate Impact (ideal=1.0)             0.9481     0.0460     0.8706     1.0014    
-  none                 D0           Equal Opportunity (ideal=0.0)            0.0424     0.2172     -0.1842    0.4147    
-  none                 D0           Utility threshold (>0.15): ✓ (mean=0.4985)
-  none                 D1A          PhysioNet Utility (ideal=1.0)            0.4985     0.0384     0.4552     0.5567    
-  none                 D1A          Disparate Impact (ideal=1.0)             0.9481     0.0460     0.8706     1.0014    
-  none                 D1A          Equal Opportunity (ideal=0.0)            0.0424     0.2172     -0.1842    0.4147    
-  none                 D1A          Utility threshold (>0.15): ✓ (mean=0.4985)
-  none                 D2A          PhysioNet Utility (ideal=1.0)            0.4985     0.0384     0.4552     0.5567    
-  none                 D2A          Disparate Impact (ideal=1.0)             0.9481     0.0460     0.8706     1.0014    
-  none                 D2A          Equal Opportunity (ideal=0.0)            0.0424     0.2172     -0.1842    0.4147    
-  none                 D2A          Utility threshold (>0.15): ✓ (mean=0.4985)
-  reweighting          D0           PhysioNet Utility (ideal=1.0)            0.4985     0.0384     0.4552     0.5567    
-  reweighting          D0           Disparate Impact (ideal=1.0)             0.9481     0.0460     0.8706     1.0014    
-  reweighting          D0           Equal Opportunity (ideal=0.0)            0.0424     0.2172     -0.1842    0.4147    
-  reweighting          D0           Utility threshold (>0.15): ✓ (mean=0.4985)
-  reweighting          D1A          PhysioNet Utility (ideal=1.0)            0.4985     0.0384     0.4552     0.5567    
-  reweighting          D1A          Disparate Impact (ideal=1.0)             0.9481     0.0460     0.8706     1.0014    
-  reweighting          D1A          Equal Opportunity (ideal=0.0)            0.0424     0.2172     -0.1842    0.4147    
-  reweighting          D1A          Utility threshold (>0.15): ✓ (mean=0.4985)
-  reweighting          D2A          PhysioNet Utility (ideal=1.0)            0.4985     0.0384     0.4552     0.5567    
-  reweighting          D2A          Disparate Impact (ideal=1.0)             0.9481     0.0460     0.8706     1.0014    
-  reweighting          D2A          Equal Opportunity (ideal=0.0)            0.0424     0.2172     -0.1842    0.4147    
-  reweighting          D2A          Utility threshold (>0.15): ✓ (mean=0.4985)
-  smote                D0           PhysioNet Utility (ideal=1.0)            0.4778     0.0451     0.4145     0.5328    
-  smote                D0           Disparate Impact (ideal=1.0)             0.9301     0.0621     0.8476     1.0235    
-  smote                D0           Equal Opportunity (ideal=0.0)            0.0162     0.2974     -0.2953    0.5033    
-  smote                D0           Utility threshold (>0.15): ✓ (mean=0.4778)
-  smote                D1A          PhysioNet Utility (ideal=1.0)            0.4778     0.0451     0.4145     0.5328    
-  smote                D1A          Disparate Impact (ideal=1.0)             0.9301     0.0621     0.8476     1.0235    
-  smote                D1A          Equal Opportunity (ideal=0.0)            0.0162     0.2974     -0.2953    0.5033    
-  smote                D1A          Utility threshold (>0.15): ✓ (mean=0.4778)
-  smote                D2A          PhysioNet Utility (ideal=1.0)            0.4778     0.0451     0.4145     0.5328    
-  smote                D2A          Disparate Impact (ideal=1.0)             0.9301     0.0621     0.8476     1.0235    
-  smote                D2A          Equal Opportunity (ideal=0.0)            0.0162     0.2974     -0.2953    0.5033    
-  smote                D2A          Utility threshold (>0.15): ✓ (mean=0.4778)
-  threshold_optimization D0           PhysioNet Utility (ideal=1.0)            0.4985     0.0384     0.4552     0.5567    
-  threshold_optimization D0           Disparate Impact (ideal=1.0)             0.9481     0.0460     0.8706     1.0014    
-  threshold_optimization D0           Equal Opportunity (ideal=0.0)            0.0424     0.2172     -0.1842    0.4147    
-  threshold_optimization D0           Utility threshold (>0.15): ✓ (mean=0.4985)
-  threshold_optimization D1A          PhysioNet Utility (ideal=1.0)            0.4985     0.0384     0.4552     0.5567    
-  threshold_optimization D1A          Disparate Impact (ideal=1.0)             0.9481     0.0460     0.8706     1.0014    
-  threshold_optimization D1A          Equal Opportunity (ideal=0.0)            0.0424     0.2172     -0.1842    0.4147    
-  threshold_optimization D1A          Utility threshold (>0.15): ✓ (mean=0.4985)
-  threshold_optimization D2A          PhysioNet Utility (ideal=1.0)            0.4985     0.0384     0.4552     0.5567    
-  threshold_optimization D2A          Disparate Impact (ideal=1.0)             0.9481     0.0460     0.8706     1.0014    
-  threshold_optimization D2A          Equal Opportunity (ideal=0.0)            0.0424     0.2172     -0.1842    0.4147    
-  threshold_optimization D2A          Utility threshold (>0.15): ✓ (mean=0.4985)
-
-========================================================================================================================
-SAVING RESULTS
-========================================================================================================================
-✓ Saved results CSV: rebuild_outputs/tables/results_all.csv
-✓ Saved results pickle: rebuild_outputs/results.pkl
-✓ Saved summary CSV: rebuild_outputs/tables/summary_statistics.csv
-  
+GRU             threshold_optimization D1A          1     0.2933       0.8244       -0.0956     
+GRU             threshold_optimization D2A          1     0.3001       0.7900       -0.1361     
