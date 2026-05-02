@@ -183,14 +183,8 @@ for iter_idx in tqdm(range(N_BOOTSTRAP_ITERATIONS), desc="Bootstrap iterations",
                     else:
                         raise ValueError(f"Unknown mitigation: {mitigation_name}")
 
-                    # Fit model on mitigated training data
-                    if sample_weights is not None and hasattr(model, 'fit'):
-                        try:
-                            model.fit(X_train_mit, y_train_mit, sample_weight=sample_weights)
-                        except TypeError:
-                            model.fit(X_train_mit, y_train_mit)
-                    else:
-                        model.fit(X_train_mit, y_train_mit)
+                    # Fit model on mitigated training data with optional sample weights
+                    model.fit(X_train_mit, y_train_mit, sample_weight=sample_weights)
 
                     # Evaluate on (same) bootstrap evaluation set
                     y_proba = model.predict_proba(X_eval)[:, 1]

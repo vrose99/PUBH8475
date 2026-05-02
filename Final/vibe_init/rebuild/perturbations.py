@@ -3,8 +3,8 @@ Dataset perturbations for robustness evaluation.
 
 Variants (following main pipeline):
   D0 — Original: input data as-is
-  D1A — Row removal: 50% of non-sepsis female rows removed
-  D2A — Missingness-at-random: 25% of non-sepsis female rows have 25% of measurements set to NaN
+  D1A — Row removal: 50% of non-sepsis rows removed (both genders)
+  D2A — Missingness-at-random: 25% of non-sepsis rows have 25% of measurements set to NaN (both genders)
 
 All perturbations preserve time-series structure and all sepsis cases to maintain case balance.
 """
@@ -100,9 +100,10 @@ def _dataset_row_removal(
     removal_fraction: float = 0.5,
 ) -> pd.DataFrame:
     """
-    Remove 50% of non-sepsis ROWS for female patients.
+    Remove 50% of non-sepsis ROWS, stratified by gender.
     Removes at the row level (patient-hour level), not patient level.
     Preserves all sepsis rows (SepsisLabel==1).
+    Applies removal to both genders to maximize dataset differentiation.
 
     Parameters
     ----------
@@ -113,7 +114,7 @@ def _dataset_row_removal(
     rng : np.random.Generator, optional
         Random number generator
     removal_fraction : float
-        Fraction of non-sepsis female rows to remove (default 0.5 = 50%)
+        Fraction of non-sepsis rows to remove (default 0.5 = 50%)
 
     Returns
     -------
@@ -125,17 +126,15 @@ def _dataset_row_removal(
 
     df = df_train.copy()
 
-    # Select all non-sepsis female rows
-    female_mask = (df["Gender"] == female_val).values
+    # Select all non-sepsis rows (both genders)
     non_sepsis_mask = (df["SepsisLabel"] == 0).values
-    removable_mask = female_mask & non_sepsis_mask
 
-    n_removable = removable_mask.sum()
+    n_removable = non_sepsis_mask.sum()
     n_remove = max(1, int(n_removable * removal_fraction))
 
     if n_removable > 0:
         # Get indices of rows to remove
-        removable_indices = np.where(removable_mask)[0]
+        removable_indices = np.where(non_sepsis_mask)[0]
         remove_indices = rng.choice(
             removable_indices,
             size=min(n_remove, len(removable_indices)),
@@ -156,20 +155,21 @@ def _dataset_mar(
     missing_col_fraction: float = 0.25,
 ) -> pd.DataFrame:
     """
-    Missingness-at-random: randomly select fraction of non-sepsis female rows
+    Missingness-at-random: randomly select fraction of non-sepsis rows
     and set fraction of their numeric measurements to NaN.
     Simulates differential data collection quality.
+    Applies to both genders to maximize dataset differentiation.
 
     Parameters
     ----------
     df_train : pd.DataFrame
         Dataset to perturb
     female_val : str
-        Value representing female gender
+        Value representing female gender (unused, kept for API compatibility)
     rng : np.random.Generator, optional
         Random number generator
     missing_row_fraction : float
-        Fraction of non-sepsis female rows to perturb (default 0.25 = 25%)
+        Fraction of non-sepsis rows to perturb (default 0.25 = 25%)
     missing_col_fraction : float
         Fraction of numeric columns to set NaN in perturbed rows (default 0.25 = 25%)
 
@@ -182,17 +182,15 @@ def _dataset_mar(
         rng = np.random.default_rng(42)
 
     df = df_train.copy()
-    female_mask = (df["Gender"] == female_val).values
     non_sepsis_mask = (df["SepsisLabel"] == 0).values
-    perturb_mask = female_mask & non_sepsis_mask
 
-    n_available = perturb_mask.sum()
+    n_available = non_sepsis_mask.sum()
 
-    # Select fraction of non-sepsis female rows to perturb
+    # Select fraction of non-sepsis rows to perturb (both genders)
     n_perturb = max(1, int(n_available * missing_row_fraction))
     if n_available > 0:
         perturb_indices = rng.choice(
-            np.where(perturb_mask)[0],
+            np.where(non_sepsis_mask)[0],
             size=min(n_perturb, n_available),
             replace=False
         )

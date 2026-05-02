@@ -129,7 +129,7 @@ class LogisticGLM(BaseModel):
         self.scaler = StandardScaler()
         self._is_fit = False
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         """Fit on training data."""
         X, y = self._preprocess_data(X, y)
 
@@ -139,8 +139,8 @@ class LogisticGLM(BaseModel):
         # Scale features
         X = self.scaler.fit_transform(X)
 
-        # Fit logistic regression
-        self.model.fit(X, y)
+        # Fit logistic regression with optional sample weights
+        self.model.fit(X, y, sample_weight=sample_weight)
         self._is_fit = True
 
         logger.info(
@@ -219,7 +219,7 @@ class XGBoostModel(BaseModel):
         self.imputer = SimpleImputer(strategy="median")
         self._is_fit = False
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         """Fit on training data."""
         X, y = self._preprocess_data(X, y)
 
@@ -233,8 +233,8 @@ class XGBoostModel(BaseModel):
         spw = n_neg / n_pos if n_pos > 0 else 1.0
         self.model.set_params(scale_pos_weight=spw)
 
-        # Fit XGBoost
-        self.model.fit(X, y)
+        # Fit XGBoost with optional sample weights
+        self.model.fit(X, y, sample_weight=sample_weight)
         self._is_fit = True
 
         logger.info(
@@ -338,7 +338,7 @@ class GRUModel(BaseModel):
             self._device
         )
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         """Fit on training data."""
         X, y = self._preprocess_data(X, y)
 
@@ -358,7 +358,7 @@ class GRUModel(BaseModel):
         n_pos = int((y == 1).sum())
         pw = n_neg / n_pos if n_pos > 0 else 1.0
         pos_weight = torch.tensor([pw], dtype=torch.float32, device=self._device)
-        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction='none')
 
         n_samples = len(X)
         n_batches = (n_samples + self.batch_size - 1) // self.batch_size
@@ -390,7 +390,18 @@ class GRUModel(BaseModel):
 
                 optimizer.zero_grad()
                 y_pred = self.gru(X_batch)
-                loss = criterion(y_pred, y_batch)
+                loss_unreduced = criterion(y_pred, y_batch)
+
+                if sample_weight is not None:
+                    batch_weights = torch.tensor(
+                        sample_weight[batch_indices],
+                        dtype=torch.float32,
+                        device=self._device
+                    )
+                    loss = (loss_unreduced * batch_weights).mean()
+                else:
+                    loss = loss_unreduced.mean()
+
                 loss.backward()
                 optimizer.step()
 
