@@ -185,7 +185,8 @@ for iter_idx in tqdm(range(N_BOOTSTRAP_ITERATIONS), desc="Bootstrap iterations",
                     # Fit model on mitigated training data with optional sample weights
                     # (unless using fairness_penalty which returns a pre-fitted model)
                     if mitigated_model is None:
-                        model.fit(X_train_mit, y_train_mit, sample_weight=sample_weights)
+                        model.fit(X_train_mit, y_train_mit, sample_weight=sample_weights,
+                                 mitigation=mitigation_name)
                     else:
                         model = mitigated_model
 

@@ -249,7 +249,32 @@ def apply_fairness_penalty(
     sensitive_numeric = (sensitive_train == male_val).astype(int)
 
     # Fit the mitigator on preprocessed data
-    mitigator_grid.fit(X_preprocessed, y_train, sensitive_features=sensitive_numeric)
+    try:
+        mitigator_grid.fit(X_preprocessed, y_train, sensitive_features=sensitive_numeric)
+    except (ZeroDivisionError, ValueError) as e:
+        # If fairlearn fails (e.g., group imbalance), fall back to base model
+        logger.warning(
+            "fairness_penalty: GridSearch failed (%s), falling back to unmitigated model", str(e)
+        )
+        base_fitted = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)
+        base_fitted.fit(X_preprocessed, y_train)
+
+        class SimpleWrapper:
+            def __init__(self, model, imputer, scaler):
+                self._model = model
+                self._imputer = imputer
+                self._scaler = scaler
+            def predict_proba(self, X):
+                X_prep = self._imputer.transform(X)
+                X_prep = self._scaler.transform(X_prep)
+                return self._model.predict_proba(X_prep)
+            def predict(self, X):
+                X_prep = self._imputer.transform(X)
+                X_prep = self._scaler.transform(X_prep)
+                return self._model.predict(X_prep)
+
+        wrapped = SimpleWrapper(base_fitted, imputer, scaler)
+        return X_train, y_train, None, wrapped
 
     # Wrap the fitted mitigator with preprocessing pipeline
     # Create a wrapper that handles imputation and scaling during predict_proba

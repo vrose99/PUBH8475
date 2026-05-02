@@ -129,7 +129,7 @@ class LogisticGLM(BaseModel):
         self.scaler = StandardScaler()
         self._is_fit = False
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, mitigation=None):
         """Fit on training data."""
         X, y = self._preprocess_data(X, y)
 
@@ -139,9 +139,10 @@ class LogisticGLM(BaseModel):
         # Scale features
         X = self.scaler.fit_transform(X)
 
-        # When sample_weight is provided (reweighting mitigation), disable
-        # automatic class balancing so sample_weight is the sole mechanism.
-        if sample_weight is not None:
+        # For reweighting mitigation, disable automatic class balancing so
+        # sample_weight is the sole weighting mechanism. For all others,
+        # use automatic class balancing for robustness.
+        if mitigation == 'reweighting' and sample_weight is not None:
             self.model.set_params(class_weight=None)
         else:
             self.model.set_params(class_weight="balanced")
@@ -225,16 +226,17 @@ class XGBoostModel(BaseModel):
         self.imputer = SimpleImputer(strategy="median")
         self._is_fit = False
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, mitigation=None):
         """Fit on training data."""
         X, y = self._preprocess_data(X, y)
 
         # Impute missing values
         X = self.imputer.fit_transform(X)
 
-        # When sample_weight is provided (reweighting mitigation), disable
-        # automatic class balancing so sample_weight is the sole mechanism.
-        if sample_weight is not None:
+        # For reweighting mitigation, disable automatic class balancing so
+        # sample_weight is the sole weighting mechanism. For all others,
+        # use automatic class balancing for robustness.
+        if mitigation == 'reweighting' and sample_weight is not None:
             self.model.set_params(scale_pos_weight=1.0)
         else:
             n_neg = int((y == 0).sum())
@@ -347,7 +349,7 @@ class GRUModel(BaseModel):
             self._device
         )
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, mitigation=None):
         """Fit on training data."""
         X, y = self._preprocess_data(X, y)
 
@@ -359,10 +361,10 @@ class GRUModel(BaseModel):
         self.gru = self._build_gru(X.shape[1])
         optimizer = optim.Adam(self.gru.parameters(), lr=self.learning_rate)
 
-        # When sample_weight is provided (reweighting mitigation), disable
-        # automatic class balancing so sample_weight is the sole mechanism.
-        # Otherwise use full class ratio to keep GRU sensitive to rare sepsis.
-        if sample_weight is not None:
+        # For reweighting mitigation, disable automatic class balancing so
+        # sample_weight is the sole weighting mechanism. For all others,
+        # use automatic class balancing for robustness.
+        if mitigation == 'reweighting' and sample_weight is not None:
             pw = 1.0
         else:
             n_neg = int((y == 0).sum())
