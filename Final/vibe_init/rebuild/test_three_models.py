@@ -52,13 +52,15 @@ from perturbations import build_all_datasets
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIGURATION
 # ─────────────────────────────────────────────────────────────────────────────
+import warnings
+warnings.filterwarnings('ignore')
 
 TRAIN_SIZE = 300
 THRESHOLD = 0.4
-BOOTSTRAP_POOL_SIZE = 100
-BOOTSTRAP_EVAL_SIZE = 50
-N_BOOTSTRAP_ITERATIONS = 5
-RANDOM_STATE = 42
+BOOTSTRAP_POOL_SIZE = 1000
+BOOTSTRAP_EVAL_SIZE = 200
+N_BOOTSTRAP_ITERATIONS = 10
+RANDOM_STATE = 1
 
 MODEL_NAMES = ["LogisticGLM", "XGBoost", "GRU"]
 MITIGATION_NAMES = ["none", "reweighting", "smote", "threshold_optimization"]
