@@ -248,13 +248,67 @@ def apply_fairness_penalty(
     # Convert sensitive attribute to numeric for fairlearn
     sensitive_numeric = (sensitive_train == male_val).astype(int)
 
+    # Guard: Check if both groups have both positive and negative samples
+    # (fairlearn requires this for EqualizedOdds constraint)
+    for group_val in [0, 1]:
+        group_mask = sensitive_numeric == group_val
+        if group_mask.sum() == 0:
+            logger.warning(
+                "fairness_penalty: group %d has no samples, falling back to unmitigated model", group_val
+            )
+            base_fitted = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)
+            base_fitted.fit(X_preprocessed, y_train)
+
+            class SimpleWrapper:
+                def __init__(self, model, imputer, scaler):
+                    self._model = model
+                    self._imputer = imputer
+                    self._scaler = scaler
+                def predict_proba(self, X):
+                    X_prep = self._imputer.transform(X)
+                    X_prep = self._scaler.transform(X_prep)
+                    return self._model.predict_proba(X_prep)
+                def predict(self, X):
+                    X_prep = self._imputer.transform(X)
+                    X_prep = self._scaler.transform(X_prep)
+                    return self._model.predict(X_prep)
+
+            wrapped = SimpleWrapper(base_fitted, imputer, scaler)
+            return X_train, y_train, None, wrapped
+
+        y_group = y_train[group_mask]
+        if (y_group == 0).sum() == 0 or (y_group == 1).sum() == 0:
+            logger.warning(
+                "fairness_penalty: group %d has only one label, falling back to unmitigated model", group_val
+            )
+            base_fitted = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)
+            base_fitted.fit(X_preprocessed, y_train)
+
+            class SimpleWrapper:
+                def __init__(self, model, imputer, scaler):
+                    self._model = model
+                    self._imputer = imputer
+                    self._scaler = scaler
+                def predict_proba(self, X):
+                    X_prep = self._imputer.transform(X)
+                    X_prep = self._scaler.transform(X_prep)
+                    return self._model.predict_proba(X_prep)
+                def predict(self, X):
+                    X_prep = self._imputer.transform(X)
+                    X_prep = self._scaler.transform(X_prep)
+                    return self._model.predict(X_prep)
+
+            wrapped = SimpleWrapper(base_fitted, imputer, scaler)
+            return X_train, y_train, None, wrapped
+
     # Fit the mitigator on preprocessed data
     try:
         mitigator_grid.fit(X_preprocessed, y_train, sensitive_features=sensitive_numeric)
-    except (ZeroDivisionError, ValueError) as e:
-        # If fairlearn fails (e.g., group imbalance), fall back to base model
+    except Exception as e:
+        # If fairlearn fails for any reason, fall back to base model
         logger.warning(
-            "fairness_penalty: GridSearch failed (%s), falling back to unmitigated model", str(e)
+            "fairness_penalty: GridSearch failed (%s: %s), falling back to unmitigated model",
+            type(e).__name__, str(e)
         )
         base_fitted = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)
         base_fitted.fit(X_preprocessed, y_train)

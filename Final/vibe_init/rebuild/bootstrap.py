@@ -57,7 +57,10 @@ class BootstrapResampler:
 
     def generate_iteration(self, iteration_idx: int) -> Tuple[np.ndarray, pd.DataFrame]:
         """
-        Generate one bootstrap iteration by sampling patients with replacement.
+        Generate one bootstrap iteration by stratified sampling on (gender, label) pairs.
+
+        Ensures both genders and both labels are represented in each bootstrap sample
+        to guarantee fairness metrics can be computed without division by zero.
 
         Args:
             iteration_idx: Iteration number (0-indexed)
@@ -67,19 +70,50 @@ class BootstrapResampler:
                 sampled_patient_ids: Array of sampled patient IDs (length = bootstrap_sample_size)
                 rows_dataframe: All rows from those patients
         """
-        # Sample patient IDs with replacement
-        sampled_pids = self.rng.choice(
-            self.bootstrap_pool,
-            size=self.bootstrap_sample_size,
-            replace=True,
-        )
+        # Get all data for bootstrap pool
+        pool_df = self.full_df[self.full_df["patient_id"].isin(self.bootstrap_pool)].copy()
+
+        # Stratify by (Gender, SepsisLabel) to ensure representation
+        strata_key = pool_df["Gender"].astype(str) + "_" + pool_df["SepsisLabel"].astype(str)
+        unique_strata = strata_key.unique()
+
+        sampled_pids = []
+        patients_per_stratum = max(1, self.bootstrap_sample_size // len(unique_strata))
+
+        for stratum in unique_strata:
+            # Get all patients in this stratum
+            stratum_mask = strata_key == stratum
+            stratum_pids = pool_df[stratum_mask]["patient_id"].unique()
+
+            # Sample from this stratum with replacement
+            n_to_sample = min(patients_per_stratum, self.bootstrap_sample_size - len(sampled_pids))
+            if n_to_sample > 0 and len(stratum_pids) > 0:
+                sampled = self.rng.choice(
+                    stratum_pids,
+                    size=n_to_sample,
+                    replace=True,
+                )
+                sampled_pids.extend(sampled)
+
+        # If we haven't reached the target size, fill with random sampling
+        if len(sampled_pids) < self.bootstrap_sample_size:
+            remaining = self.bootstrap_sample_size - len(sampled_pids)
+            additional = self.rng.choice(
+                self.bootstrap_pool,
+                size=remaining,
+                replace=True,
+            )
+            sampled_pids.extend(additional)
+
+        sampled_pids = np.array(sampled_pids)
 
         # Fetch all rows for these patients
         rows_df = self.full_df[self.full_df["patient_id"].isin(sampled_pids)].copy()
         rows_df.reset_index(drop=True, inplace=True)
 
         logger.debug(
-            "Bootstrap iteration %d: %d unique patients, %d total rows",
+            "Bootstrap iteration %d: %d unique patients, %d total rows, "
+            "stratified by (Gender, SepsisLabel)",
             iteration_idx,
             len(np.unique(sampled_pids)),
             len(rows_df),
