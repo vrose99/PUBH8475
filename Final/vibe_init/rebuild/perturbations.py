@@ -3,8 +3,10 @@ Dataset perturbations for robustness evaluation.
 
 Variants (following main pipeline):
   D0 — Original: input data as-is
-  D1A — Row removal: 50% of non-sepsis rows removed (both genders)
-  D2A — Missingness-at-random: 25% of non-sepsis rows have 25% of measurements set to NaN (both genders)
+  D1A — Female patient removal: 50% of female patient IDs removed entirely (imbalanced gender)
+  D2A — Asymmetric missingness-at-random (simulates data collection bias):
+        Females: 50% of rows have 50% of measurements missing (high missingness)
+        Males: 10% of rows have 10% of measurements missing (low missingness)
 
 All perturbations preserve time-series structure and all sepsis cases to maintain case balance.
 """
@@ -58,8 +60,10 @@ def build_all_datasets(
     dict
         {
             'D0': original dataset,
-            'D1A': dataset with 50% of non-sepsis female rows removed,
-            'D2A': dataset with 25% of non-sepsis female rows having 25% measurements as NaN
+            'D1A': dataset with 50% of female patient IDs removed (gender imbalance),
+            'D2A': dataset with gender-asymmetric missingness:
+                   - Females: 50% of rows have 50% of measurements missing (high missingness)
+                   - Males: 10% of rows have 10% of measurements missing (low missingness)
         }
     """
     rng = np.random.default_rng(random_state)
@@ -100,10 +104,9 @@ def _dataset_row_removal(
     removal_fraction: float = 0.5,
 ) -> pd.DataFrame:
     """
-    Remove 50% of non-sepsis ROWS, stratified by gender.
-    Removes at the row level (patient-hour level), not patient level.
-    Preserves all sepsis rows (SepsisLabel==1).
-    Applies removal to both genders to maximize dataset differentiation.
+    Remove 50% of female PATIENT IDs entirely (all their rows).
+    Creates an imbalanced gender distribution in training data.
+    Preserves all male patients and all sepsis patients.
 
     Parameters
     ----------
@@ -114,35 +117,32 @@ def _dataset_row_removal(
     rng : np.random.Generator, optional
         Random number generator
     removal_fraction : float
-        Fraction of non-sepsis rows to remove (default 0.5 = 50%)
+        Fraction of female patient IDs to remove (default 0.5 = 50%)
 
     Returns
     -------
     pd.DataFrame
-        Perturbed dataset
+        Perturbed dataset with ~50% fewer female patients
     """
     if rng is None:
         rng = np.random.default_rng(42)
 
     df = df_train.copy()
 
-    # Select all non-sepsis rows (both genders)
-    non_sepsis_mask = (df["SepsisLabel"] == 0).values
+    # Get all female patient IDs
+    female_mask = (df["Gender"] == female_val).values
+    female_pids = df[female_mask]["patient_id"].unique()
 
-    n_removable = non_sepsis_mask.sum()
-    n_remove = max(1, int(n_removable * removal_fraction))
+    # Randomly select half of female patient IDs to remove
+    n_female_to_remove = max(1, int(len(female_pids) * removal_fraction))
+    pids_to_remove = rng.choice(
+        female_pids,
+        size=min(n_female_to_remove, len(female_pids)),
+        replace=False
+    )
 
-    if n_removable > 0:
-        # Get indices of rows to remove
-        removable_indices = np.where(non_sepsis_mask)[0]
-        remove_indices = rng.choice(
-            removable_indices,
-            size=min(n_remove, len(removable_indices)),
-            replace=False
-        )
-
-        # Remove those rows
-        df = df.drop(df.index[remove_indices])
+    # Remove all rows for those patient IDs
+    df = df[~df["patient_id"].isin(pids_to_remove)]
 
     return df.reset_index(drop=True)
 
@@ -151,58 +151,73 @@ def _dataset_mar(
     df_train: pd.DataFrame,
     female_val: str = 'F',
     rng: np.random.Generator = None,
-    missing_row_fraction: float = 0.25,
-    missing_col_fraction: float = 0.25,
+    female_missing_row_fraction: float = 0.5,
+    female_missing_col_fraction: float = 0.5,
+    male_missing_row_fraction: float = 0.1,
+    male_missing_col_fraction: float = 0.1,
 ) -> pd.DataFrame:
     """
-    Missingness-at-random: randomly select fraction of non-sepsis rows
-    and set fraction of their numeric measurements to NaN.
-    Simulates differential data collection quality.
-    Applies to both genders to maximize dataset differentiation.
+    Missingness-at-random with gender-based asymmetry.
+    Applies differential missingness rates to females vs males.
+    Simulates realistic data collection bias where one demographic group
+    has systematically lower quality records.
 
     Parameters
     ----------
     df_train : pd.DataFrame
         Dataset to perturb
     female_val : str
-        Value representing female gender (unused, kept for API compatibility)
+        Value representing female gender
     rng : np.random.Generator, optional
         Random number generator
-    missing_row_fraction : float
-        Fraction of non-sepsis rows to perturb (default 0.25 = 25%)
-    missing_col_fraction : float
-        Fraction of numeric columns to set NaN in perturbed rows (default 0.25 = 25%)
+    female_missing_row_fraction : float
+        Fraction of female non-sepsis rows to perturb (default 0.5 = 50%)
+    female_missing_col_fraction : float
+        Fraction of numeric columns to set NaN in female rows (default 0.5 = 50%)
+    male_missing_row_fraction : float
+        Fraction of male non-sepsis rows to perturb (default 0.1 = 10%)
+    male_missing_col_fraction : float
+        Fraction of numeric columns to set NaN in male rows (default 0.1 = 10%)
 
     Returns
     -------
     pd.DataFrame
-        Perturbed dataset
+        Perturbed dataset with asymmetric missingness by gender
     """
     if rng is None:
         rng = np.random.default_rng(42)
 
     df = df_train.copy()
-    non_sepsis_mask = (df["SepsisLabel"] == 0).values
+    numeric_cols = _get_numeric_cols(df)
 
-    n_available = non_sepsis_mask.sum()
-
-    # Select fraction of non-sepsis rows to perturb (both genders)
-    n_perturb = max(1, int(n_available * missing_row_fraction))
-    if n_available > 0:
-        perturb_indices = rng.choice(
-            np.where(non_sepsis_mask)[0],
-            size=min(n_perturb, n_available),
+    # Process females: high missingness
+    female_non_sepsis_mask = (df["Gender"] == female_val) & (df["SepsisLabel"] == 0)
+    female_indices = np.where(female_non_sepsis_mask)[0]
+    if len(female_indices) > 0:
+        n_female_perturb = max(1, int(len(female_indices) * female_missing_row_fraction))
+        female_perturb_indices = rng.choice(
+            female_indices,
+            size=min(n_female_perturb, len(female_indices)),
             replace=False
         )
-    else:
-        perturb_indices = []
+        n_cols_blank = max(1, int(len(numeric_cols) * female_missing_col_fraction))
+        for idx in female_perturb_indices:
+            cols_to_blank = rng.choice(numeric_cols, size=n_cols_blank, replace=False)
+            df.iloc[idx, df.columns.get_indexer(cols_to_blank)] = np.nan
 
-    # For each perturbed row, set fraction of numeric columns to NaN
-    numeric_cols = _get_numeric_cols(df)
-    n_cols_blank = max(1, int(len(numeric_cols) * missing_col_fraction))
-
-    for idx in perturb_indices:
-        cols_to_blank = rng.choice(numeric_cols, size=n_cols_blank, replace=False)
-        df.iloc[idx, df.columns.get_indexer(cols_to_blank)] = np.nan
+    # Process males: low missingness
+    male_non_sepsis_mask = (df["Gender"] != female_val) & (df["SepsisLabel"] == 0)
+    male_indices = np.where(male_non_sepsis_mask)[0]
+    if len(male_indices) > 0:
+        n_male_perturb = max(1, int(len(male_indices) * male_missing_row_fraction))
+        male_perturb_indices = rng.choice(
+            male_indices,
+            size=min(n_male_perturb, len(male_indices)),
+            replace=False
+        )
+        n_cols_blank = max(1, int(len(numeric_cols) * male_missing_col_fraction))
+        for idx in male_perturb_indices:
+            cols_to_blank = rng.choice(numeric_cols, size=n_cols_blank, replace=False)
+            df.iloc[idx, df.columns.get_indexer(cols_to_blank)] = np.nan
 
     return df.reset_index(drop=True)
