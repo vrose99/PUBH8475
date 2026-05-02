@@ -192,6 +192,8 @@ def apply_threshold_optimization(
     """
     from sklearn.linear_model import LogisticRegression
     from sklearn.model_selection import train_test_split
+    from sklearn.impute import SimpleImputer
+    from sklearn.preprocessing import StandardScaler
 
     # Split training data if validation not provided
     if X_val is None or y_val is None or sensitive_val is None:
@@ -203,6 +205,16 @@ def apply_threshold_optimization(
         )
     else:
         X_train_fit, y_train_fit, s_train_fit = X_train, y_train, sensitive_train
+
+    # Impute missing values and scale features
+    imputer = SimpleImputer(strategy="median")
+    scaler = StandardScaler()
+
+    X_train_fit = imputer.fit_transform(X_train_fit)
+    X_train_fit = scaler.fit_transform(X_train_fit)
+
+    X_val = imputer.transform(X_val)
+    X_val = scaler.transform(X_val)
 
     # Train a simple logistic regression to get probability estimates
     lr = LogisticRegression(max_iter=1000, random_state=42)
