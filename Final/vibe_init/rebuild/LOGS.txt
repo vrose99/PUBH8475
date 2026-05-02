@@ -32,9 +32,9 @@ Model           Mitigation           Perturbation Iter  PhysioNet_U  Disp_Impact
 Bootstrap iterations:   0%|                                                                                                | 0/10 [00:00<?, ?iteration/s]LogisticGLM     none                 D0           1     0.5278       1.0156       -0.0079     
 LogisticGLM     none                 D1A          1     0.5398       1.0225       -0.0133     
 LogisticGLM     none                 D2A          1     0.5190       1.0197       0.0140      
-LogisticGLM     reweighting          D0           1     0.0340       5.3245       0.0444      
-LogisticGLM     reweighting          D1A          1     0.0726       2.0122       0.0426      
-LogisticGLM     reweighting          D2A          1     0.0358       4.6922       0.0445      
+LogisticGLM     reweighting          D0           1     0.5278       1.0156       -0.0079     
+LogisticGLM     reweighting          D1A          1     0.5398       1.0225       -0.0133     
+LogisticGLM     reweighting          D2A          1     0.5190       1.0197       0.0140      
 LogisticGLM     smote                D0           1     0.5269       1.0244       -0.0018     
 LogisticGLM     smote                D1A          1     0.5368       1.0124       -0.0156     
 LogisticGLM     smote                D2A          1     0.5258       1.0292       0.0002      
@@ -47,9 +47,9 @@ LogisticGLM     fairness_penalty     D2A          1     0.0209       8.8876     
 XGBoost         none                 D0           1     0.2895       1.3035       0.0997      
 XGBoost         none                 D1A          1     0.2965       1.3645       0.1060      
 XGBoost         none                 D2A          1     0.2878       1.3168       0.1459      
-XGBoost         reweighting          D0           1     0.0465       4.2114       0.0999      
-XGBoost         reweighting          D1A          1     0.0817       2.4770       0.1282      
-XGBoost         reweighting          D2A          1     0.0483       3.7619       0.0898      
+XGBoost         reweighting          D0           1     0.2895       1.3035       0.0997      
+XGBoost         reweighting          D1A          1     0.2965       1.3645       0.1060      
+XGBoost         reweighting          D2A          1     0.2878       1.3168       0.1459      
 XGBoost         smote                D0           1     0.2947       1.2907       0.1081      
 XGBoost         smote                D1A          1     0.3023       1.3146       0.1022      
 XGBoost         smote                D2A          1     0.2967       1.2981       0.1141      
@@ -62,9 +62,9 @@ XGBoost         fairness_penalty     D2A          1     0.0209       8.8876     
 GRU             none                 D0           1     0.3619       1.1148       0.0514      
 GRU             none                 D1A          1     0.3802       1.1023       0.0504      
 GRU             none                 D2A          1     0.3633       1.1049       0.0454      
-GRU             reweighting          D0           1     0.0674       3.0211       0.0829      
-GRU             reweighting          D1A          1     0.0871       2.3478       0.0840      
-GRU             reweighting          D2A          1     0.0672       3.0612       0.0889      
+GRU             reweighting          D0           1     0.3619       1.1148       0.0514      
+GRU             reweighting          D1A          1     0.3802       1.1023       0.0504      
+GRU             reweighting          D2A          1     0.3633       1.1049       0.0454      
 GRU             smote                D0           1     0.4153       1.1591       0.0763      
 GRU             smote                D1A          1     0.4628       1.1009       0.0445      
 GRU             smote                D2A          1     0.4132       1.1500       0.0703      
@@ -73,4 +73,4 @@ GRU             fairness_penalty     D0           1     0.0211       10.1063    
 WARNING:mitigation:fairness_penalty: group 1 has no samples, falling back to unmitigated model
 GRU             fairness_penalty     D1A          1     0.0405       3.9461       0.0467      
 WARNING:mitigation:fairness_penalty: group 1 has no samples, falling back to unmitigated model
-GRU             fairness_penalty     D2A          1     0.0209       8.8876       0.0376   
+GRU             fairness_penalty     D2A          1     0.0209       8.8876       0.0376      
