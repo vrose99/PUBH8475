@@ -27,6 +27,8 @@ def _normalize_gender(sensitive: np.ndarray) -> Tuple[np.ndarray, object, object
         (normalized, female_val, male_val) where normalized is 0/1 int array
     """
     unique_vals = set(np.unique(sensitive).tolist())
+    # Remove NaN if present
+    unique_vals = {v for v in unique_vals if v == v}  # NaN != NaN, so this filters it out
 
     if unique_vals <= {0, 1} or unique_vals <= {0.0, 1.0}:
         # PhysioNet numeric: 0=male, 1=female
