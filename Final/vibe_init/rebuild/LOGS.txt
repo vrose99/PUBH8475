@@ -23,45 +23,45 @@ Training data:
 
 Building dataset perturbations...
   D0 (original):      11682 rows, 300 patients
-  D1A (row removal):  5967 rows, 300 patients
+  D1A (row removal):  11682 rows, 300 patients
   D2A (MAR):          11682 rows, 300 patients
 
 Bootstrap evaluation (threshold=0.4):
 Model           Mitigation           Perturbation Iter  PhysioNet_U  Disp_Impact  Eq_Opp      
 ------------------------------------------------------------------------------------------------------------------------
 Bootstrap iterations:   0%|                                                                                                                           | 0/10 [00:00<?, ?iteration/s]LogisticGLM     none                 D0           1     0.5167       0.9890       0.0170      
-LogisticGLM     none                 D1A          1     0.5213       0.9921       0.0189      
-LogisticGLM     none                 D2A          1     0.5173       0.9928       0.0221      
+LogisticGLM     none                 D1A          1     0.5167       0.9890       0.0170      
+LogisticGLM     none                 D2A          1     0.5155       0.9898       0.0199      
 LogisticGLM     reweighting          D0           1     0.5197       0.9913       0.0199      
-LogisticGLM     reweighting          D1A          1     0.5243       0.9917       0.0154      
-LogisticGLM     reweighting          D2A          1     0.5203       0.9923       0.0204      
+LogisticGLM     reweighting          D1A          1     0.5197       0.9913       0.0199      
+LogisticGLM     reweighting          D2A          1     0.5196       0.9913       0.0186      
 LogisticGLM     smote                D0           1     0.5219       0.9905       0.0243      
-LogisticGLM     smote                D1A          1     0.5205       0.9861       0.0212      
-LogisticGLM     smote                D2A          1     0.5194       0.9925       0.0246      
+LogisticGLM     smote                D1A          1     0.5219       0.9905       0.0243      
+LogisticGLM     smote                D2A          1     0.5218       0.9905       0.0230      
 LogisticGLM     fairness_penalty     D0           1     0.0146       0.5799       -0.0035     
-LogisticGLM     fairness_penalty     D1A          1     0.0394       0.7445       -0.0021     
-LogisticGLM     fairness_penalty     D2A          1     0.0159       0.5864       -0.0036     
+LogisticGLM     fairness_penalty     D1A          1     0.0146       0.5799       -0.0035     
+LogisticGLM     fairness_penalty     D2A          1     0.0146       0.5816       -0.0035     
 XGBoost         none                 D0           1     0.2822       0.8899       0.0492      
-XGBoost         none                 D1A          1     0.2848       0.9085       0.0550      
-XGBoost         none                 D2A          1     0.2778       0.9005       0.0501      
+XGBoost         none                 D1A          1     0.2822       0.8899       0.0492      
+XGBoost         none                 D2A          1     0.2823       0.9000       0.0501      
 XGBoost         reweighting          D0           1     0.3018       0.9075       0.0526      
-XGBoost         reweighting          D1A          1     0.2860       0.9126       0.0581      
-XGBoost         reweighting          D2A          1     0.2884       0.9009       0.0510      
+XGBoost         reweighting          D1A          1     0.3018       0.9075       0.0526      
+XGBoost         reweighting          D2A          1     0.2965       0.9079       0.0535      
 XGBoost         smote                D0           1     0.2849       0.9035       0.0495      
-XGBoost         smote                D1A          1     0.2854       0.9021       0.0498      
-XGBoost         smote                D2A          1     0.2815       0.9053       0.0466      
+XGBoost         smote                D1A          1     0.2849       0.9035       0.0495      
+XGBoost         smote                D2A          1     0.2853       0.9052       0.0449      
 XGBoost         fairness_penalty     D0           1     0.0146       0.5799       -0.0035     
-XGBoost         fairness_penalty     D1A          1     0.0394       0.7445       -0.0021     
-XGBoost         fairness_penalty     D2A          1     0.0159       0.5864       -0.0036     
+XGBoost         fairness_penalty     D1A          1     0.0146       0.5799       -0.0035     
+XGBoost         fairness_penalty     D2A          1     0.0146       0.5816       -0.0035     
 GRU             none                 D0           1     0.3528       0.9587       0.0424      
-GRU             none                 D1A          1     0.3698       0.9613       0.0418      
-GRU             none                 D2A          1     0.3579       0.9514       0.0393      
+GRU             none                 D1A          1     0.3528       0.9587       0.0424      
+GRU             none                 D2A          1     0.3549       0.9558       0.0399      
 GRU             reweighting          D0           1     0.3598       0.9530       0.0395      
-GRU             reweighting          D1A          1     0.3700       0.9597       0.0336      
-GRU             reweighting          D2A          1     0.3638       0.9562       0.0384      
+GRU             reweighting          D1A          1     0.3598       0.9530       0.0395      
+GRU             reweighting          D2A          1     0.3614       0.9500       0.0380      
 GRU             smote                D0           1     0.3902       0.9435       0.0221      
-GRU             smote                D1A          1     0.4446       0.9690       0.0177      
-GRU             smote                D2A          1     0.3933       0.9418       0.0167      
+GRU             smote                D1A          1     0.3902       0.9435       0.0221      
+GRU             smote                D2A          1     0.3889       0.9398       0.0213      
 GRU             fairness_penalty     D0           1     0.0146       0.5799       -0.0035     
-GRU             fairness_penalty     D1A          1     0.0394       0.7445       -0.0021     
-GRU             fairness_penalty     D2A          1     0.0159       0.5864       -0.0036     
+GRU             fairness_penalty     D1A          1     0.0146       0.5799       -0.0035     
+GRU             fairness_penalty     D2A          1     0.0146       0.5816       -0.0035  
