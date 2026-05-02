@@ -23,16 +23,16 @@ def _compute_reweighting(
     male_val: str = 'M',
 ) -> np.ndarray:
     """
-    Upweight underrepresented cases: Y=1 (positive/sepsis) and minority gender.
+    Reweight to improve gender fairness (not class balancing).
+
+    The models already have built-in class balancing. This mitigation focuses
+    on gender fairness by upweighting the minority gender group.
 
     Weights:
-    - Base: 1.0 (majority class, majority gender)
-    - Y=1: multiplied by 2.0 (sepsis cases are rare)
-    - Minority gender: multiplied by 1.5
-    - Both: combined (e.g., Y=1 AND minority gender gets 3.0x)
+    - Majority gender: 1.0
+    - Minority gender: 1.3x
 
-    This helps the model learn better from underrepresented groups without
-    changing the decision threshold.
+    This gentler approach avoids extreme weight imbalances that destroy utility.
     """
     weights = np.ones(len(y), dtype=float)
 
@@ -41,17 +41,14 @@ def _compute_reweighting(
     m_count = (sensitive == male_val).sum()
     minority_gender = female_val if f_count < m_count else male_val
 
-    # Upweight positive cases (Y=1, usually rare)
-    weights[y == 1] *= 2.0
-
-    # Upweight minority gender
-    weights[sensitive == minority_gender] *= 1.5
+    # Gently upweight minority gender only (leave class balancing to the model)
+    weights[sensitive == minority_gender] *= 1.3
 
     # Normalize so mean weight = 1.0 (preserves overall learning rate)
     weights = weights / weights.mean()
 
     logger.debug(
-        "Reweighting: upweighting Y=1 (2.0x) and minority gender %s (1.5x), "
+        "Reweighting: upweighting minority gender %s (1.3x), "
         "weight range [%.3f, %.3f]",
         minority_gender, weights.min(), weights.max()
     )
