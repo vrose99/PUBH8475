@@ -210,10 +210,10 @@ def apply_fairness_penalty(
     model=None,
 ):
     """
-    Fairness-constrained mitigation using fairlearn's GridSearch with EqualizedOdds.
+    Fairness-constrained mitigation using fairlearn's GridSearch with DemographicParity.
 
-    Returns a fitted wrapper model that enforces equalized odds constraints
-    between sensitive groups. The model is fitted internally and should be used
+    Returns a fitted wrapper model that enforces demographic parity (equal selection rates
+    across sensitive groups). The model is fitted internally and should be used
     directly instead of fitting the base model.
 
     Args:
@@ -225,7 +225,7 @@ def apply_fairness_penalty(
         (X_train, y_train, None, fitted_mitigator_model)
     """
     try:
-        from fairlearn.reductions import GridSearch, EqualizedOdds
+        from fairlearn.reductions import GridSearch, DemographicParity
     except ImportError:
         raise ImportError("fairlearn not installed — `pip install fairlearn`")
 
@@ -252,10 +252,11 @@ def apply_fairness_penalty(
     X_preprocessed = imputer.fit_transform(X_train)
     X_preprocessed = scaler.fit_transform(X_preprocessed)
 
-    # Create fairlearn mitigator with EqualizedOdds constraint
+    # Create fairlearn mitigator with DemographicParity constraint
+    # (equal selection rates across groups, less restrictive than EqualizedOdds)
     mitigator_grid = GridSearch(
         estimator=base_model,
-        constraints=EqualizedOdds(),
+        constraints=DemographicParity(),
         grid_size=10,
     )
 
@@ -365,7 +366,7 @@ def apply_fairness_penalty(
 
     wrapped_mitigator = PreprocessingWrapper(mitigator_grid, imputer, scaler)
 
-    logger.debug("fairness_penalty: GridSearch fitted with EqualizedOdds constraint")
+    logger.debug("fairness_penalty: GridSearch fitted with DemographicParity constraint")
 
     return X_train, y_train, None, wrapped_mitigator
 
