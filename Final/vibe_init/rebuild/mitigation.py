@@ -180,32 +180,74 @@ def apply_threshold_optimization(
     male_val: str = 'M',
 ) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray], dict]:
     """
-    Per-group threshold optimization on validation set.
+    Per-group threshold optimization.
 
-    Stores optimal thresholds for use during evaluation.
+    Trains a logistic regression model on training data, then searches for
+    optimal thresholds on validation set to maximize balanced accuracy per group.
 
-    If validation set not provided, uses training set for calibration
-    (not ideal but allows for standalone use).
+    If validation set not provided, splits training data (80/20).
 
     Returns:
         (X_train, y_train, None, {'female_threshold': t_f, 'male_threshold': t_m})
     """
-    if X_val is None or y_val is None or sensitive_val is None:
-        # Use training set if validation not provided
-        X_val, y_val, sensitive_val = X_train, y_train, sensitive_train
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import train_test_split
 
-    # For now, return identity thresholds (0.5 for both groups)
-    # This is a placeholder; in real use, we'd fit a model on X_val
-    # and search for optimal thresholds
-    thresholds = {
-        'female_threshold': 0.5,
-        'male_threshold': 0.5,
-    }
+    # Split training data if validation not provided
+    if X_val is None or y_val is None or sensitive_val is None:
+        X_train_fit, X_val, y_train_fit, y_val, s_train_fit, sensitive_val = train_test_split(
+            X_train, y_train, sensitive_train,
+            test_size=0.2,
+            random_state=42,
+            stratify=y_train
+        )
+    else:
+        X_train_fit, y_train_fit, s_train_fit = X_train, y_train, sensitive_train
+
+    # Train a simple logistic regression to get probability estimates
+    lr = LogisticRegression(max_iter=1000, random_state=42)
+    lr.fit(X_train_fit, y_train_fit)
+    y_val_proba = lr.predict_proba(X_val)[:, 1]
+
+    # Find optimal threshold per group to maximize balanced accuracy
+    thresholds = {}
+    for g_name, g_val in [('female_threshold', female_val), ('male_threshold', male_val)]:
+        g_mask = sensitive_val == g_val
+        if g_mask.sum() > 0:
+            y_g = y_val[g_mask]
+            proba_g = y_val_proba[g_mask]
+
+            best_threshold = 0.5
+            best_score = -1
+
+            # Search for threshold that maximizes balanced accuracy (TPR + TNR) / 2
+            for thresh in np.arange(0.1, 0.9, 0.01):
+                y_pred = (proba_g >= thresh).astype(int)
+
+                # Compute per-group balanced accuracy
+                tp = ((y_pred == 1) & (y_g == 1)).sum()
+                fp = ((y_pred == 1) & (y_g == 0)).sum()
+                fn = ((y_pred == 0) & (y_g == 1)).sum()
+                tn = ((y_pred == 0) & (y_g == 0)).sum()
+
+                if (tp + fn) > 0 and (fp + tn) > 0:
+                    tpr = tp / (tp + fn)  # Sensitivity
+                    tnr = tn / (fp + tn)  # Specificity
+                    balanced_acc = (tpr + tnr) / 2
+                    if balanced_acc > best_score:
+                        best_score = balanced_acc
+                        best_threshold = thresh
+        else:
+            best_threshold = 0.5
+
+        thresholds[g_name] = best_threshold
 
     logger.debug(
-        "Threshold optimization: female=%.2f, male=%.2f",
+        "Threshold optimization: female=%.2f (score=%.3f), male=%.2f (score=%.3f)",
         thresholds['female_threshold'],
+        best_score if g_name == 'female_threshold' else 0,
         thresholds['male_threshold'],
+        best_score if g_name == 'male_threshold' else 0,
     )
 
     return X_train, y_train, None, thresholds

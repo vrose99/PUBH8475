@@ -171,6 +171,7 @@ for iter_idx in tqdm(range(N_BOOTSTRAP_ITERATIONS), desc="Bootstrap iterations",
 
                     # Apply mitigation to training data
                     mitigation_fn = get_mitigation(mitigation_name)
+                    opt_thresholds = None
 
                     if mitigation_name == 'none':
                         X_train_mit, y_train_mit, sample_weights = mitigation_fn(X_train, y_train, s_train)
@@ -179,7 +180,7 @@ for iter_idx in tqdm(range(N_BOOTSTRAP_ITERATIONS), desc="Bootstrap iterations",
                     elif mitigation_name == 'smote':
                         X_train_mit, y_train_mit, sample_weights = mitigation_fn(X_train, y_train, s_train)
                     elif mitigation_name == 'threshold_optimization':
-                        X_train_mit, y_train_mit, sample_weights, _ = mitigation_fn(X_train, y_train, s_train)
+                        X_train_mit, y_train_mit, sample_weights, opt_thresholds = mitigation_fn(X_train, y_train, s_train)
                     else:
                         raise ValueError(f"Unknown mitigation: {mitigation_name}")
 
@@ -188,7 +189,17 @@ for iter_idx in tqdm(range(N_BOOTSTRAP_ITERATIONS), desc="Bootstrap iterations",
 
                     # Evaluate on (same) bootstrap evaluation set
                     y_proba = model.predict_proba(X_eval)[:, 1]
-                    y_pred = (y_proba >= THRESHOLD).astype(int)
+
+                    # Apply per-group thresholds if threshold_optimization was used
+                    if mitigation_name == 'threshold_optimization' and opt_thresholds is not None:
+                        y_pred = np.zeros_like(y_proba, dtype=int)
+                        for i, (prob, g) in enumerate(zip(y_proba, gender)):
+                            if g == 'F':
+                                y_pred[i] = int(prob >= opt_thresholds.get('female_threshold', THRESHOLD))
+                            else:
+                                y_pred[i] = int(prob >= opt_thresholds.get('male_threshold', THRESHOLD))
+                    else:
+                        y_pred = (y_proba >= THRESHOLD).astype(int)
 
                     # Compute fairness metrics
                     fairness = compute_fairness_metrics(
