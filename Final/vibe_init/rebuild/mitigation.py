@@ -223,6 +223,8 @@ def apply_threshold_optimization(
 
     # Find optimal threshold per group to maximize balanced accuracy
     thresholds = {}
+    threshold_scores = {}
+
     for g_name, g_val in [('female_threshold', female_val), ('male_threshold', male_val)]:
         g_mask = sensitive_val == g_val
         if g_mask.sum() > 0:
@@ -251,15 +253,17 @@ def apply_threshold_optimization(
                         best_threshold = thresh
         else:
             best_threshold = 0.5
+            best_score = 0
 
         thresholds[g_name] = best_threshold
+        threshold_scores[g_name] = best_score
 
     logger.debug(
         "Threshold optimization: female=%.2f (score=%.3f), male=%.2f (score=%.3f)",
         thresholds['female_threshold'],
-        best_score if g_name == 'female_threshold' else 0,
+        threshold_scores['female_threshold'],
         thresholds['male_threshold'],
-        best_score if g_name == 'male_threshold' else 0,
+        threshold_scores['male_threshold'],
     )
 
     return X_train, y_train, None, thresholds
