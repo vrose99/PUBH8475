@@ -139,7 +139,13 @@ class LogisticGLM(BaseModel):
         # Scale features
         X = self.scaler.fit_transform(X)
 
-        # Fit logistic regression with optional sample weights
+        # When sample_weight is provided (reweighting mitigation), disable
+        # automatic class balancing so sample_weight is the sole mechanism.
+        if sample_weight is not None:
+            self.model.set_params(class_weight=None)
+        else:
+            self.model.set_params(class_weight="balanced")
+
         self.model.fit(X, y, sample_weight=sample_weight)
         self._is_fit = True
 
@@ -226,12 +232,15 @@ class XGBoostModel(BaseModel):
         # Impute missing values
         X = self.imputer.fit_transform(X)
 
-        # Set scale_pos_weight from actual class ratio in this training split.
-        # Using the full ratio keeps models sensitive to rare sepsis events.
-        n_neg = int((y == 0).sum())
-        n_pos = int((y == 1).sum())
-        spw = n_neg / n_pos if n_pos > 0 else 1.0
-        self.model.set_params(scale_pos_weight=spw)
+        # When sample_weight is provided (reweighting mitigation), disable
+        # automatic class balancing so sample_weight is the sole mechanism.
+        if sample_weight is not None:
+            self.model.set_params(scale_pos_weight=1.0)
+        else:
+            n_neg = int((y == 0).sum())
+            n_pos = int((y == 1).sum())
+            spw = n_neg / n_pos if n_pos > 0 else 1.0
+            self.model.set_params(scale_pos_weight=spw)
 
         # Fit XGBoost with optional sample weights
         self.model.fit(X, y, sample_weight=sample_weight)
@@ -350,13 +359,15 @@ class GRUModel(BaseModel):
         self.gru = self._build_gru(X.shape[1])
         optimizer = optim.Adam(self.gru.parameters(), lr=self.learning_rate)
 
-        # Weighted loss using full class ratio to keep the GRU sensitive to
-        # rare sepsis events. The PhysioNet utility function penalises missed
-        # sepsis (-2) much more than false alarms (-0.05), so liberal alarming
-        # is correct behaviour.
-        n_neg = int((y == 0).sum())
-        n_pos = int((y == 1).sum())
-        pw = n_neg / n_pos if n_pos > 0 else 1.0
+        # When sample_weight is provided (reweighting mitigation), disable
+        # automatic class balancing so sample_weight is the sole mechanism.
+        # Otherwise use full class ratio to keep GRU sensitive to rare sepsis.
+        if sample_weight is not None:
+            pw = 1.0
+        else:
+            n_neg = int((y == 0).sum())
+            n_pos = int((y == 1).sum())
+            pw = n_neg / n_pos if n_pos > 0 else 1.0
         pos_weight = torch.tensor([pw], dtype=torch.float32, device=self._device)
         criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight, reduction='none')
 

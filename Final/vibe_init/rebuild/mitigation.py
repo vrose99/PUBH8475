@@ -23,20 +23,38 @@ def _compute_reweighting(
     male_val: str = 'M',
 ) -> np.ndarray:
     """
-    Compute inverse-frequency weights: weight = 1 / P(group) / P(label|group).
+    Upweight underrepresented cases: Y=1 (positive/sepsis) and minority gender.
 
-    Normalized so weights sum to n_samples.
-    Ensures each (group × label) cell contributes equally.
+    Weights:
+    - Base: 1.0 (majority class, majority gender)
+    - Y=1: multiplied by 2.0 (sepsis cases are rare)
+    - Minority gender: multiplied by 1.5
+    - Both: combined (e.g., Y=1 AND minority gender gets 3.0x)
+
+    This helps the model learn better from underrepresented groups without
+    changing the decision threshold.
     """
     weights = np.ones(len(y), dtype=float)
 
-    for g in [female_val, male_val]:
-        for lbl in [0, 1]:
-            mask = (sensitive == g) & (y == lbl)
-            if mask.sum() > 0:
-                # Weight inversely proportional to cell size
-                weights[mask] = len(y) / (4 * mask.sum())
+    # Identify minority gender (the smaller group)
+    f_count = (sensitive == female_val).sum()
+    m_count = (sensitive == male_val).sum()
+    minority_gender = female_val if f_count < m_count else male_val
 
+    # Upweight positive cases (Y=1, usually rare)
+    weights[y == 1] *= 2.0
+
+    # Upweight minority gender
+    weights[sensitive == minority_gender] *= 1.5
+
+    # Normalize so mean weight = 1.0 (preserves overall learning rate)
+    weights = weights / weights.mean()
+
+    logger.debug(
+        "Reweighting: upweighting Y=1 (2.0x) and minority gender %s (1.5x), "
+        "weight range [%.3f, %.3f]",
+        minority_gender, weights.min(), weights.max()
+    )
     return weights
 
 
