@@ -16,11 +16,40 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def _normalize_gender(sensitive: np.ndarray) -> Tuple[np.ndarray, object, object]:
+    """
+    Normalize gender to consistent 0/1 encoding regardless of source format.
+
+    Handles PhysioNet numeric (0=male, 1=female), string ('F'/'M'),
+    or verbose string ('Female'/'Male').
+
+    Returns:
+        (normalized, female_val, male_val) where normalized is 0/1 int array
+    """
+    unique_vals = set(np.unique(sensitive).tolist())
+
+    if unique_vals <= {0, 1} or unique_vals <= {0.0, 1.0}:
+        # PhysioNet numeric: 0=male, 1=female
+        female_val, male_val = 1, 0
+    elif unique_vals <= {'F', 'M'}:
+        female_val, male_val = 'F', 'M'
+    elif unique_vals <= {'Female', 'Male'}:
+        female_val, male_val = 'Female', 'Male'
+    else:
+        # Fallback: use the smaller group as female
+        vals = list(unique_vals)
+        counts = {v: (sensitive == v).sum() for v in vals}
+        female_val = min(counts, key=counts.get)
+        male_val = [v for v in vals if v != female_val][0]
+
+    return sensitive, female_val, male_val
+
+
 def _compute_reweighting(
     y: np.ndarray,
     sensitive: np.ndarray,
-    female_val: str = 'F',
-    male_val: str = 'M',
+    female_val=None,
+    male_val=None,
 ) -> np.ndarray:
     """
     Reweight to improve gender fairness (not class balancing).
@@ -34,17 +63,14 @@ def _compute_reweighting(
 
     This gentler approach avoids extreme weight imbalances that destroy utility.
     """
+    sensitive, female_val, male_val = _normalize_gender(sensitive)
     weights = np.ones(len(y), dtype=float)
 
-    # Identify minority gender (the smaller group)
     f_count = (sensitive == female_val).sum()
     m_count = (sensitive == male_val).sum()
     minority_gender = female_val if f_count < m_count else male_val
 
-    # Gently upweight minority gender only (leave class balancing to the model)
     weights[sensitive == minority_gender] *= 1.3
-
-    # Normalize so mean weight = 1.0 (preserves overall learning rate)
     weights = weights / weights.mean()
 
     logger.debug(
@@ -68,20 +94,14 @@ def apply_reweighting(
     X_train: np.ndarray,
     y_train: np.ndarray,
     sensitive_train: np.ndarray,
-    female_val: str = 'F',
-    male_val: str = 'M',
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Reweight samples so each (group × label) cell contributes equally.
+    Reweight samples to upweight minority gender group.
 
     Returns:
         (X_train, y_train, sample_weights)
     """
-    weights = _compute_reweighting(
-        y_train, sensitive_train,
-        female_val=female_val,
-        male_val=male_val,
-    )
+    weights = _compute_reweighting(y_train, sensitive_train)
     logger.debug(
         "Reweighting: weight range [%.3f, %.3f]", weights.min(), weights.max()
     )
@@ -92,8 +112,6 @@ def apply_smote(
     X_train: np.ndarray,
     y_train: np.ndarray,
     sensitive_train: np.ndarray,
-    female_val: str = 'F',
-    male_val: str = 'M',
     random_state: int = 42,
 ) -> Tuple[np.ndarray, np.ndarray, Optional[np.ndarray]]:
     """
@@ -111,12 +129,13 @@ def apply_smote(
         from imblearn.over_sampling import SMOTE, RandomOverSampler
     except ImportError:
         logger.warning("imbalanced-learn not installed, falling back to reweighting")
-        return apply_reweighting(X_train, y_train, sensitive_train, female_val, male_val)
+        return apply_reweighting(X_train, y_train, sensitive_train)
 
+    sensitive_train, female_val, male_val = _normalize_gender(sensitive_train)
     rng = np.random.default_rng(random_state)
 
-    f_mask = (sensitive_train == female_val) | (sensitive_train == 'Female') | (sensitive_train == 1)
-    m_mask = (sensitive_train == male_val) | (sensitive_train == 'Male') | (sensitive_train == 0)
+    f_mask = sensitive_train == female_val
+    m_mask = sensitive_train == male_val
     n_female, n_male = f_mask.sum(), m_mask.sum()
     target = max(n_female, n_male)
 
@@ -189,8 +208,6 @@ def apply_fairness_penalty(
     y_train: np.ndarray,
     sensitive_train: np.ndarray,
     model=None,
-    female_val: str = 'F',
-    male_val: str = 'M',
 ):
     """
     Fairness-constrained mitigation using fairlearn's GridSearch with EqualizedOdds.
@@ -242,7 +259,8 @@ def apply_fairness_penalty(
         grid_size=10,
     )
 
-    # Convert sensitive attribute to numeric for fairlearn
+    # Normalize gender encoding and convert to 0/1 for fairlearn
+    sensitive_train, female_val, male_val = _normalize_gender(sensitive_train)
     sensitive_numeric = (sensitive_train == male_val).astype(int)
 
     # Guard: Check if both groups have both positive and negative samples
