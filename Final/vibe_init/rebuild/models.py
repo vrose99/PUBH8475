@@ -119,7 +119,7 @@ class LogisticGLM(BaseModel):
             C=C,
             penalty="l1",
             solver="saga",
-            class_weight=None,
+            class_weight="balanced",
             max_iter=10000,
             tol=1e-3,
             random_state=random_state,
