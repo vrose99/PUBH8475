@@ -55,11 +55,11 @@ from perturbations import build_all_datasets
 import warnings
 warnings.filterwarnings('ignore')
 
-TRAIN_SIZE = 300
+TRAIN_SIZE = 10000
 THRESHOLD = 0.4
-BOOTSTRAP_POOL_SIZE = 1000
-BOOTSTRAP_EVAL_SIZE = 200
-N_BOOTSTRAP_ITERATIONS = 10
+BOOTSTRAP_POOL_SIZE = 5000
+BOOTSTRAP_EVAL_SIZE = 500
+N_BOOTSTRAP_ITERATIONS = 1000
 RANDOM_STATE = 1
 
 MODEL_NAMES = ["LogisticGLM", "XGBoost", "GRU"]
