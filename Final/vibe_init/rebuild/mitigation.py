@@ -54,31 +54,37 @@ def _compute_reweighting(
     male_val=None,
 ) -> np.ndarray:
     """
-    Reweight to improve gender fairness (not class balancing).
+    Inverse-frequency group weights for gender fairness.
 
-    The models already have built-in class balancing. This mitigation focuses
-    on gender fairness by upweighting the minority gender group.
+    Each gender group receives total weight proportional to 1/group_size,
+    so both groups contribute equally to the loss regardless of their
+    raw counts.  Weight for sample i in group g:
 
-    Weights:
-    - Majority gender: 1.0
-    - Minority gender: 1.3x
+        w_i = N / (n_groups * N_g)
 
-    This gentler approach avoids extreme weight imbalances that destroy utility.
+    where N = total samples, N_g = samples in group g.  This scales
+    automatically with actual imbalance (e.g. 90/10 split → 9× upweight)
+    rather than using a fixed multiplier.  Class balancing is left to
+    the individual model's built-in mechanism.
     """
     sensitive, female_val, male_val = _normalize_gender(sensitive)
-    weights = np.ones(len(y), dtype=float)
+    n = len(y)
+    n_groups = 2
+    weights = np.ones(n, dtype=float)
 
-    f_count = (sensitive == female_val).sum()
-    m_count = (sensitive == male_val).sum()
-    minority_gender = female_val if f_count < m_count else male_val
+    for g_val in (female_val, male_val):
+        g_mask = sensitive == g_val
+        n_g = int(g_mask.sum())
+        if n_g > 0:
+            weights[g_mask] = n / (n_groups * n_g)
 
-    weights[sensitive == minority_gender] *= 1.3
+    # Normalize so mean weight == 1 (keeps loss scale stable)
     weights = weights / weights.mean()
 
     logger.debug(
-        "Reweighting: upweighting minority gender %s (1.3x), "
+        "Reweighting: inverse-frequency group weights, "
         "weight range [%.3f, %.3f]",
-        minority_gender, weights.min(), weights.max()
+        weights.min(), weights.max()
     )
     return weights
 
@@ -239,13 +245,45 @@ def apply_fairness_penalty(
     if model is None:
         raise ValueError("fairness_penalty requires a model instance")
 
-    # Clone the base model (use sklearn's LogisticRegression for simplicity)
+    # Select the sklearn-compatible base estimator that matches the passed model.
+    # fairlearn's GridSearch requires an sklearn estimator interface, so GRU
+    # (PyTorch) falls back to LogisticRegression — the only unavoidable exception.
     from sklearn.linear_model import LogisticRegression
-    base_model = LogisticRegression(
-        max_iter=1000,
-        solver="lbfgs",
-        random_state=42,
-    )
+
+    model_class_name = type(model).__name__
+
+    if model_class_name == "XGBoostModel":
+        try:
+            from xgboost import XGBClassifier
+            base_model = XGBClassifier(
+                n_estimators=model.n_estimators,
+                max_depth=model.max_depth,
+                learning_rate=model.learning_rate,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                objective="binary:logistic",
+                eval_metric="auc",
+                random_state=model.random_state,
+                n_jobs=1,
+                verbosity=0,
+            )
+        except ImportError:
+            base_model = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)
+    elif model_class_name == "LogisticGLM":
+        base_model = LogisticRegression(
+            C=model.C,
+            max_iter=1000,
+            solver="lbfgs",
+            random_state=model.random_state,
+        )
+    else:
+        # GRUModel or unknown — fairlearn cannot wrap PyTorch natively
+        logger.warning(
+            "fairness_penalty: %s is not sklearn-compatible; "
+            "using LogisticRegression as fairness-constrained surrogate",
+            model_class_name,
+        )
+        base_model = LogisticRegression(max_iter=1000, solver="lbfgs", random_state=42)
 
     # Preprocess: impute and scale to handle NaN values
     imputer = SimpleImputer(strategy="median")

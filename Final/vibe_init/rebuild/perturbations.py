@@ -117,11 +117,11 @@ def _dataset_row_removal(
     df_train: pd.DataFrame,
     female_val: str = 'F',
     rng: np.random.Generator = None,
-    removal_fraction: float = 0.5,
+    removal_fraction: float = 0.8,
 ) -> pd.DataFrame:
     """
-    Remove 50% of female PATIENT IDs entirely (all their rows).
-    Creates an imbalanced gender distribution in training data.
+    Remove 80% of female PATIENT IDs entirely (all their rows).
+    Creates severe gender imbalance in training data.
     Preserves all male patients and all sepsis patients.
 
     Parameters
@@ -133,12 +133,12 @@ def _dataset_row_removal(
     rng : np.random.Generator, optional
         Random number generator
     removal_fraction : float
-        Fraction of female patient IDs to remove (default 0.5 = 50%)
+        Fraction of female patient IDs to remove (default 0.8 = 80%)
 
     Returns
     -------
     pd.DataFrame
-        Perturbed dataset with ~50% fewer female patients
+        Perturbed dataset with ~80% fewer female patients
     """
     if rng is None:
         rng = np.random.default_rng(42)
@@ -183,13 +183,13 @@ def _dataset_mar(
     df_train: pd.DataFrame,
     female_val: str = 'F',
     rng: np.random.Generator = None,
-    female_missing_row_fraction: float = 0.5,
-    female_missing_col_fraction: float = 0.5,
-    male_missing_row_fraction: float = 0.1,
-    male_missing_col_fraction: float = 0.1,
+    female_missing_row_fraction: float = 0.8,
+    female_missing_col_fraction: float = 0.8,
+    male_missing_row_fraction: float = 0.3,
+    male_missing_col_fraction: float = 0.3,
 ) -> pd.DataFrame:
     """
-    Missingness-at-random with gender-based asymmetry.
+    Missingness-at-random with severe gender-based asymmetry.
     Applies differential missingness rates to females vs males.
     Simulates realistic data collection bias where one demographic group
     has systematically lower quality records.
@@ -203,18 +203,18 @@ def _dataset_mar(
     rng : np.random.Generator, optional
         Random number generator
     female_missing_row_fraction : float
-        Fraction of female non-sepsis rows to perturb (default 0.5 = 50%)
+        Fraction of female non-sepsis rows to perturb (default 0.8 = 80%)
     female_missing_col_fraction : float
-        Fraction of numeric columns to set NaN in female rows (default 0.5 = 50%)
+        Fraction of numeric columns to set NaN in female rows (default 0.8 = 80%)
     male_missing_row_fraction : float
-        Fraction of male non-sepsis rows to perturb (default 0.1 = 10%)
+        Fraction of male non-sepsis rows to perturb (default 0.3 = 30%)
     male_missing_col_fraction : float
-        Fraction of numeric columns to set NaN in male rows (default 0.1 = 10%)
+        Fraction of numeric columns to set NaN in male rows (default 0.3 = 30%)
 
     Returns
     -------
     pd.DataFrame
-        Perturbed dataset with asymmetric missingness by gender
+        Perturbed dataset with severe asymmetric missingness by gender
     """
     if rng is None:
         rng = np.random.default_rng(42)
