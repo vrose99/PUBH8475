@@ -185,8 +185,8 @@ def _dataset_mar(
     rng: np.random.Generator = None,
     female_missing_row_fraction: float = 0.8,
     female_missing_col_fraction: float = 0.8,
-    male_missing_row_fraction: float = 0.3,
-    male_missing_col_fraction: float = 0.3,
+    male_missing_row_fraction: float = 0,
+    male_missing_col_fraction: float = 0,
 ) -> pd.DataFrame:
     """
     Missingness-at-random with severe gender-based asymmetry.
